@@ -1,0 +1,181 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            37.47471951034056,
+            87.84392202952121
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_1",
+        "from": "Village 1",
+        "to": "Central School",
+        "length_km": "1505.63"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            87.48540594933245,
+            84.637423304436
+          ],
+          [
+            70,
+            70
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_2",
+        "from": "Village 2",
+        "to": "West School",
+        "length_km": "1664.44"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            69.44294277871177,
+            86.10488030473502
+          ],
+          [
+            70,
+            70
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_3",
+        "from": "Village 3",
+        "to": "West School",
+        "length_km": "1790.81"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            53.34871668099879,
+            55.134461538029015
+          ],
+          [
+            50,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_4",
+        "from": "Village 4",
+        "to": "Central High",
+        "length_km": "613.97"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            75.10130216687412,
+            11.8511780980071
+          ],
+          [
+            70,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_5",
+        "from": "Village 5",
+        "to": "North School",
+        "length_km": "1769.84"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            14.27754461854013,
+            17.341163675981726
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_6",
+        "from": "Village 6",
+        "to": "Central School",
+        "length_km": "1520.50"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            32.161873956468895,
+            22.29714995177087
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_7",
+        "from": "Village 7",
+        "to": "Central School",
+        "length_km": "883.21"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            17.717261392794317,
+            35.962656596706566
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_8",
+        "from": "Village 8",
+        "to": "Central School",
+        "length_km": "1322.12"
+      }
+    }
+  ]
+}

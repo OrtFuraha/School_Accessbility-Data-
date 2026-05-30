@@ -1,0 +1,26 @@
+{
+  "name": "school-accessibility-analysis-system",
+  "version": "1.0.0",
+  "description": "GIS-based School Accessibility Analysis System for identifying underserved rural areas",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "express": "^4.22.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "keywords": [
+    "gis",
+    "accessibility",
+    "schools",
+    "rural",
+    "planning"
+  ],
+  "author": "",
+  "license": "MIT"
+}

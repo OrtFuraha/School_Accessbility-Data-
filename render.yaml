@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: school-accessibility-system
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 1111
+    healthCheckPath: /api/health
