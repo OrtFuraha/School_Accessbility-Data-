@@ -6,45 +6,65 @@
     <title>School Accessibility Analysis System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        
         .header { background: #1a56db; color: white; padding: 24px 32px; margin-bottom: 24px; }
         .header h1 { font-size: 24px; font-weight: 600; margin: 0; }
-        .header p { margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; }
+        .header p { margin: 8px 0 0 0; font-size: 14px; }
+        
         .card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 20px; overflow: hidden; }
         .card-header { background: #f9fafb; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; }
         .card-body { padding: 20px; }
+        
         .stat-card { text-align: center; padding: 16px; background: #f9fafb; border-radius: 8px; }
         .stat-number { font-size: 32px; font-weight: 700; }
+        
         .badge-good { background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
         .badge-moderate { background: #f59e0b; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
         .badge-poor { background: #ef4444; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+        
         .btn-primary { background: #1a56db; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 500; color: white; cursor: pointer; }
         .btn-primary:hover { background: #1e40af; }
         .btn-outline { background: white; border: 1px solid #d1d5db; padding: 10px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; }
         .btn-outline:hover { background: #f9fafb; }
         .btn-success { background: #10b981; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 500; color: white; cursor: pointer; }
         .btn-success:hover { background: #059669; }
+        
         .upload-area { border: 2px dashed #d1d5db; border-radius: 12px; padding: 24px; text-align: center; background: #fafafa; cursor: pointer; }
         .upload-area:hover { border-color: #1a56db; background: #eff6ff; }
+        
         .data-table { width: 100%; font-size: 13px; border-collapse: collapse; }
         .data-table th { text-align: left; padding: 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
         .data-table td { padding: 12px; border-bottom: 1px solid #f5f5f5; }
+        
         .priority-high { border-left: 3px solid #ef4444; }
         .priority-medium { border-left: 3px solid #f59e0b; }
         .priority-low { border-left: 3px solid #10b981; }
+        
         .container-fluid { padding: 0 24px 24px 24px; }
         .row { margin: 0 -12px; }
         .col, [class*="col-"] { padding: 0 12px; }
-        .gis-tag { background: #e0e7ff; color: #1a56db; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+        
+        .map-container { height: 500px; border-radius: 8px; margin-top: 10px; }
+        .map-legend { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; font-size: 12px; }
+        .map-legend-item { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 5px; }
+        
+        .map-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; }
+        .map-modal-content { position: relative; background: white; margin: 3% auto; width: 90%; height: 90%; border-radius: 12px; overflow: hidden; }
+        .map-modal-header { background: #1a56db; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .map-modal-body { height: calc(100% - 60px); padding: 15px; }
+        .close-map { color: white; font-size: 28px; cursor: pointer; line-height: 20px; }
+        .close-map:hover { color: #ddd; }
+        
+        .map-view-btn { margin: 5px; }
         .route-info { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; margin-top: 12px; }
-        .location-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-        .map-container { background: #f3f4f6; border-radius: 8px; padding: 12px; min-height: 300px; position: relative; }
-        .route-line { stroke: #ef4444; stroke-width: 3; fill: none; }
-        .school-marker { fill: #1a56db; }
-        .location-marker { fill: #10b981; }
+        
+        .proposed-road-item { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .proposed-road-item strong { color: #1a56db; }
     </style>
 </head>
 <body>
@@ -52,92 +72,56 @@
         <div class="container-fluid">
             <h1><i class="fas fa-school"></i> School Accessibility Analysis System</h1>
             <p>GIS-based analysis for identifying underserved rural areas and planning road improvements</p>
-            <p><small><i class="fas fa-map"></i> Supports GIS files: .cpg, .dbf, .prj, .sbn, .sbx, .shp, .shx | <i class="fas fa-location-dot"></i> GPS location routing available</small></p>
         </div>
     </div>
     
     <div class="container-fluid">
-        <!-- NEW: Location Routing Section -->
+        <!-- Location Routing -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-location-dot"></i> Location-Based Routing - Find Nearest School & Route</div>
+            <div class="card-header"><i class="fas fa-location-dot"></i> Location-Based Routing</div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-5">
-                        <div class="location-box">
-                            <h6><i class="fas fa-map-pin"></i> Your Location</h6>
-                            <div class="mb-2">
-                                <button class="btn btn-success btn-sm me-2" onclick="getCurrentLocation()">
-                                    <i class="fas fa-satellite-dish"></i> Use GPS Location
-                                </button>
-                                <button class="btn btn-outline btn-sm" onclick="showManualLocationInput()">
-                                    <i class="fas fa-keyboard"></i> Enter Manually
-                                </button>
-                            </div>
-                            <div id="locationInput" style="display:none;">
-                                <div class="row">
-                                    <div class="col-6">
-                                        <label class="form-label small">Latitude</label>
-                                        <input type="text" id="manualLat" class="form-control form-control-sm" placeholder="e.g., 45.5">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label small">Longitude</label>
-                                        <input type="text" id="manualLon" class="form-control form-control-sm" placeholder="e.g., -93.5">
-                                    </div>
-                                </div>
-                                <button class="btn btn-primary btn-sm mt-2 w-100" onclick="setManualLocation()">Set Location</button>
-                            </div>
-                            <div id="currentLocationDisplay" class="mt-2 small text-muted"></div>
-                        </div>
-                        
-                        <div id="nearestSchoolInfo" style="display:none;" class="route-info">
-                            <h6><i class="fas fa-school"></i> Nearest School</h6>
-                            <div id="schoolDetails"></div>
-                            <button class="btn btn-primary btn-sm mt-2 w-100" onclick="calculateAndShowRoute()">
-                                <i class="fas fa-route"></i> Calculate Route
-                            </button>
-                        </div>
-                        
-                        <div id="routeInfo" style="display:none;" class="route-info">
-                            <h6><i class="fas fa-route"></i> Route Information</h6>
-                            <div id="routeDetails"></div>
-                        </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-success w-100 mb-2" onclick="getCurrentLocation()"><i class="fas fa-satellite-dish"></i> Use GPS Location</button>
+                        <input type="text" id="manualLat" class="form-control mb-2" placeholder="Latitude (e.g., -1.2833)">
+                        <input type="text" id="manualLon" class="form-control mb-2" placeholder="Longitude (e.g., 36.8167)">
+                        <button class="btn btn-primary w-100" onclick="setManualLocation()"><i class="fas fa-location-dot"></i> Set Manual Location</button>
+                        <div id="routeResult" class="mt-3" style="display:none;"></div>
                     </div>
-                    <div class="col-md-7">
-                        <div class="map-container" id="mapContainer">
-                            <canvas id="routeCanvas" width="100%" height="300" style="width:100%; height:300px; background:#f9fafb; border-radius:8px;"></canvas>
-                            <div id="mapLegend" class="small text-muted mt-2 text-center"></div>
-                        </div>
+                    <div class="col-md-8">
+                        <div id="routeMap" style="height: 300px; border-radius: 8px; background: #f3f4f6;"></div>
                     </div>
                 </div>
             </div>
         </div>
         
+        <!-- Data Upload -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-upload"></i> 1. Upload Data Files (GIS & CSV Supported)</div>
+            <div class="card-header"><i class="fas fa-upload"></i> Upload Data Files</div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-4">
                         <div class="upload-area" onclick="document.getElementById('schoolsFile').click()">
                             <i class="fas fa-school" style="font-size: 32px; color: #1a56db;"></i>
                             <p class="mt-2 mb-0"><strong>Schools Data</strong></p>
-                            <small class="text-muted">Upload .shp, .csv, .cpg, .dbf, .prj, .sbn, .sbx, .shx</small>
-                            <input type="file" id="schoolsFile" accept=".csv,.shp,.cpg,.dbf,.prj,.sbn,.sbx,.shx" style="display:none" onchange="uploadFile('schools', this)">
+                            <small>CSV, SHP, DBF, PRJ, etc.</small>
+                            <input type="file" id="schoolsFile" style="display:none" onchange="uploadFile('schools', this)">
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="upload-area" onclick="document.getElementById('villagesFile').click()">
                             <i class="fas fa-map-marker-alt" style="font-size: 32px; color: #1a56db;"></i>
                             <p class="mt-2 mb-0"><strong>Villages Data</strong></p>
-                            <small class="text-muted">Upload .shp, .csv, .cpg, .dbf, .prj, .sbn, .sbx, .shx</small>
-                            <input type="file" id="villagesFile" accept=".csv,.shp,.cpg,.dbf,.prj,.sbn,.sbx,.shx" style="display:none" onchange="uploadFile('villages', this)">
+                            <small>CSV, SHP, DBF, PRJ, etc.</small>
+                            <input type="file" id="villagesFile" style="display:none" onchange="uploadFile('villages', this)">
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="upload-area" onclick="document.getElementById('roadsFile').click()">
                             <i class="fas fa-road" style="font-size: 32px; color: #1a56db;"></i>
                             <p class="mt-2 mb-0"><strong>Roads Data</strong></p>
-                            <small class="text-muted">Upload .shp, .csv, .cpg, .dbf, .prj, .sbn, .sbx, .shx</small>
-                            <input type="file" id="roadsFile" accept=".csv,.shp,.cpg,.dbf,.prj,.sbn,.sbx,.shx" style="display:none" onchange="uploadFile('roads', this)">
+                            <small>CSV, SHP, DBF, PRJ, etc.</small>
+                            <input type="file" id="roadsFile" style="display:none" onchange="uploadFile('roads', this)">
                         </div>
                     </div>
                 </div>
@@ -148,95 +132,259 @@
                     </div>
                 </div>
                 <div class="row mt-3" id="dataStatus"></div>
-                <div class="row mt-2" id="gisStatus"></div>
             </div>
         </div>
         
+        <!-- Statistics -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-chart-pie"></i> 2. Accessibility Statistics</div>
+            <div class="card-header"><i class="fas fa-chart-pie"></i> Accessibility Statistics</div>
             <div class="card-body">
-                <div class="row" id="statsContainer">
-                    <div class="col-12 text-center text-muted">Run analysis to view statistics</div>
+                <div class="row" id="statsContainer">Loading...</div>
+            </div>
+        </div>
+        
+        <!-- Interactive Maps -->
+        <div class="card">
+            <div class="card-header"><i class="fas fa-map"></i> Interactive Maps</div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('accessibility_map')">
+                            <i class="fas fa-map"></i> Accessibility Map
+                        </button>
+                        <small class="text-muted d-block mt-1">View all villages with accessibility status</small>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('underserved_areas')">
+                            <i class="fas fa-exclamation-triangle"></i> Underserved Areas
+                        </button>
+                        <small class="text-muted d-block mt-1">Areas needing intervention</small>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('priority_zones')">
+                            <i class="fas fa-flag"></i> Priority Zones
+                        </button>
+                        <small class="text-muted d-block mt-1">High priority intervention areas</small>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('proposed_roads')">
+                            <i class="fas fa-road"></i> Proposed Roads
+                        </button>
+                        <small class="text-muted d-block mt-1">Suggested road improvements</small>
+                    </div>
+                </div>
+                <div id="previewMap" style="height: 400px; border-radius: 8px; background: #f3f4f6;"></div>
+                <div class="map-legend text-center">
+                    <span><span class="map-legend-item" style="background: #10b981;"></span> Highly Accessible</span>
+                    <span class="ms-3"><span class="map-legend-item" style="background: #f59e0b;"></span> Moderately Accessible</span>
+                    <span class="ms-3"><span class="map-legend-item" style="background: #ef4444;"></span> Underserved</span>
+                    <span class="ms-3"><span class="map-legend-item" style="background: #1a56db; border-radius: 2px;"></span> Schools</span>
+                    <span class="ms-3"><span class="map-legend-item" style="background: #ef4444; border-radius: 2px;"></span> Proposed Roads</span>
                 </div>
             </div>
         </div>
         
+        <!-- Results Table -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-table"></i> 3. Village Accessibility Results</div>
+            <div class="card-header"><i class="fas fa-table"></i> Village Accessibility Results</div>
             <div class="card-body">
                 <div style="overflow-x: auto; max-height: 400px;">
                     <table class="data-table">
-                        <thead><tr><th>Village</th><th>Category</th><th>Distance (km)</th><th>Travel Time (min)</th><th>Connectivity</th><th>Priority</th><th>Population</th></tr></thead>
+                        <thead>
+                            <tr><th>Village</th><th>Category</th><th>Distance (km)</th><th>Travel Time (min)</th><th>Priority</th><th>Population</th></tr>
+                        </thead>
                         <tbody id="resultsTable"></tbody>
                     </table>
                 </div>
             </div>
         </div>
         
+        <!-- Proposed Road Improvements (No Cost) -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-road"></i> 4. Proposed Road Improvements</div>
+            <div class="card-header"><i class="fas fa-road"></i> Proposed Road Improvements</div>
             <div class="card-body">
                 <div id="proposedRoads"></div>
             </div>
         </div>
-        
-        <div class="card">
-            <div class="card-header"><i class="fas fa-download"></i> 5. Export Spatial Data (GeoJSON)</div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3"><button class="btn btn-outline w-100" onclick="downloadGeoJSON('accessibility_map')"><i class="fas fa-map"></i> Accessibility Map</button></div>
-                    <div class="col-md-3"><button class="btn btn-outline w-100" onclick="downloadGeoJSON('underserved_areas')"><i class="fas fa-exclamation-triangle"></i> Underserved Areas</button></div>
-                    <div class="col-md-3"><button class="btn btn-outline w-100" onclick="downloadGeoJSON('priority_zones')"><i class="fas fa-flag"></i> Priority Zones</button></div>
-                    <div class="col-md-3"><button class="btn btn-outline w-100" onclick="downloadGeoJSON('proposed_roads')"><i class="fas fa-road"></i> Proposed Roads</button></div>
-                </div>
+    </div>
+    
+    <!-- Map Modal -->
+    <div id="mapModal" class="map-modal">
+        <div class="map-modal-content">
+            <div class="map-modal-header">
+                <h5 id="modalTitle" class="mb-0">Accessibility Map</h5>
+                <span class="close-map" onclick="closeMapModal()">&times;</span>
+            </div>
+            <div class="map-modal-body">
+                <div id="fullMap" style="height: 100%;"></div>
             </div>
         </div>
     </div>
     
     <script>
-        let currentLocation = null;
-        let currentNearestSchool = null;
-        let currentRoute = null;
-        let schoolsList = [];
+        let currentMap = null;
+        let routeMap = null;
+        let previewMap = null;
+        let schoolsData = [];
+        
+        // Initialize preview map
+        function initPreviewMap() {
+            previewMap = L.map('previewMap').setView([50, 50], 5);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(previewMap);
+        }
+        
+        // Show full map in modal
+        async function showMap(type) {
+            const titles = {
+                'accessibility_map': 'Accessibility Map - Village Accessibility Status',
+                'underserved_areas': 'Underserved Areas - Villages Needing Intervention',
+                'priority_zones': 'Priority Zones - High Priority Intervention Areas',
+                'proposed_roads': 'Proposed Roads - Suggested Road Improvements'
+            };
+            
+            document.getElementById('modalTitle').innerHTML = titles[type];
+            document.getElementById('mapModal').style.display = 'block';
+            
+            setTimeout(() => {
+                if (currentMap) currentMap.remove();
+                currentMap = L.map('fullMap').setView([50, 50], 5);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(currentMap);
+                
+                fetch(`/api/geojson/${type}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.features && data.features.length > 0) {
+                            const geojsonLayer = L.geoJSON(data, {
+                                pointToLayer: function(feature, latlng) {
+                                    if (type === 'proposed_roads') {
+                                        return null;
+                                    }
+                                    let color = '#10b981';
+                                    if (type === 'accessibility_map' && feature.properties) {
+                                        if (feature.properties.status === 'poor') color = '#ef4444';
+                                        else if (feature.properties.status === 'moderate') color = '#f59e0b';
+                                        else color = '#10b981';
+                                    } else if (type === 'underserved_areas') {
+                                        color = '#ef4444';
+                                    } else if (type === 'priority_zones') {
+                                        color = '#dc2626';
+                                    }
+                                    return L.circleMarker(latlng, {
+                                        radius: 8,
+                                        fillColor: color,
+                                        color: '#000',
+                                        weight: 1,
+                                        fillOpacity: 0.8
+                                    });
+                                },
+                                onEachFeature: function(feature, layer) {
+                                    let popupContent = '<b>' + (feature.properties.village || feature.properties.name || 'Feature') + '</b><br>';
+                                    if (feature.properties.distance_km) popupContent += 'Distance: ' + feature.properties.distance_km + ' km<br>';
+                                    if (feature.properties.travel_time_min) popupContent += 'Travel Time: ' + feature.properties.travel_time_min + ' min<br>';
+                                    if (feature.properties.priority_score) popupContent += 'Priority: ' + feature.properties.priority_score;
+                                    if (feature.properties.length_km) popupContent += 'Length: ' + feature.properties.length_km + ' km';
+                                    layer.bindPopup(popupContent);
+                                }
+                            }).addTo(currentMap);
+                            
+                            // Add schools layer for accessibility map
+                            if (type === 'accessibility_map' && schoolsData.length > 0) {
+                                schoolsData.forEach(school => {
+                                    L.marker([school.lat, school.lon], {
+                                        icon: L.divIcon({ className: 'school-marker', html: '🏫', iconSize: [20, 20] })
+                                    }).bindPopup('<b>' + school.name + '</b><br>School').addTo(currentMap);
+                                });
+                            }
+                            
+                            const bounds = geojsonLayer.getBounds();
+                            if (bounds.isValid()) currentMap.fitBounds(bounds);
+                        } else {
+                            currentMap.setView([50, 50], 5);
+                            L.popup().setLatLng([50, 50]).setContent('No data available. Run analysis first.').openOn(currentMap);
+                        }
+                    })
+                    .catch(() => {
+                        currentMap.setView([50, 50], 5);
+                        L.popup().setLatLng([50, 50]).setContent('No data available. Run analysis first.').openOn(currentMap);
+                    });
+            }, 100);
+        }
+        
+        // Update preview map
+        async function updatePreviewMap() {
+            if (!previewMap) initPreviewMap();
+            
+            const response = await fetch('/api/results');
+            const data = await response.json();
+            
+            previewMap.eachLayer(layer => {
+                if (layer instanceof L.GeoJSON) previewMap.removeLayer(layer);
+                if (layer instanceof L.Marker && layer.options.icon) previewMap.removeLayer(layer);
+            });
+            
+            if (data.accessibility && data.accessibility.length > 0) {
+                data.accessibility.forEach(village => {
+                    let color = '#10b981';
+                    if (village.status === 'poor') color = '#ef4444';
+                    else if (village.status === 'moderate') color = '#f59e0b';
+                    
+                    L.circleMarker([village.lat, village.lon], {
+                        radius: 6,
+                        fillColor: color,
+                        color: '#000',
+                        weight: 1,
+                        fillOpacity: 0.8
+                    }).bindPopup('<b>' + village.village_name + '</b><br>Distance: ' + village.distance_km + ' km<br>Category: ' + village.accessibility_category)
+                      .addTo(previewMap);
+                });
+                
+                // Add schools
+                if (data.schools) {
+                    data.schools.forEach(school => {
+                        L.marker([school.lat, school.lon], {
+                            icon: L.divIcon({ className: 'school-marker', html: '🏫', iconSize: [20, 20] })
+                        }).bindPopup('<b>' + school.name + '</b>').addTo(previewMap);
+                    });
+                }
+                
+                if (data.accessibility.length > 0) {
+                    const bounds = L.latLngBounds(data.accessibility.map(v => [v.lat, v.lon]));
+                    if (bounds.isValid()) previewMap.fitBounds(bounds);
+                }
+            }
+        }
+        
+        function closeMapModal() {
+            document.getElementById('mapModal').style.display = 'none';
+            if (currentMap) currentMap.remove();
+        }
         
         // Location functions
         function getCurrentLocation() {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        setLocation(lat, lon);
-                    },
-                    (error) => {
-                        alert('Error getting location: ' + error.message);
-                    }
-                );
+                navigator.geolocation.getCurrentPosition(position => {
+                    findNearestSchool(position.coords.latitude, position.coords.longitude);
+                }, error => alert('Error: ' + error.message));
             } else {
-                alert('Geolocation is not supported by this browser');
+                alert('Geolocation not supported');
             }
-        }
-        
-        function showManualLocationInput() {
-            document.getElementById('locationInput').style.display = 'block';
         }
         
         function setManualLocation() {
             const lat = parseFloat(document.getElementById('manualLat').value);
             const lon = parseFloat(document.getElementById('manualLon').value);
             if (isNaN(lat) || isNaN(lon)) {
-                alert('Please enter valid coordinates');
+                alert('Enter valid coordinates');
                 return;
             }
-            setLocation(lat, lon);
-            document.getElementById('locationInput').style.display = 'none';
+            findNearestSchool(lat, lon);
         }
         
-        async function setLocation(lat, lon) {
-            currentLocation = { lat: lat, lon: lon };
-            document.getElementById('currentLocationDisplay').innerHTML = `<i class="fas fa-location-dot"></i> Location: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-            
-            // Find nearest school
+        async function findNearestSchool(lat, lon) {
             const response = await fetch('/api/location/nearest-school', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -244,142 +392,42 @@
             });
             const data = await response.json();
             
-            if (data.success && data.nearest_school) {
-                currentNearestSchool = data;
-                document.getElementById('nearestSchoolInfo').style.display = 'block';
-                document.getElementById('schoolDetails').innerHTML = `
-                    <strong>${data.nearest_school.name}</strong><br>
-                    <small>Distance: ${data.distance_km} km</small><br>
-                    <small>Travel Time: ${data.travel_time_min} minutes</small>
+            if (data.success) {
+                document.getElementById('routeResult').style.display = 'block';
+                document.getElementById('routeResult').innerHTML = `
+                    <div class="route-info">
+                        <strong>Nearest School:</strong> ${data.nearest_school.name}<br>
+                        <strong>Distance:</strong> ${data.distance_km} km<br>
+                        <strong>Travel Time:</strong> ${data.travel_time_min} minutes
+                    </div>
                 `;
-                drawMap();
+                showRouteOnMap(lat, lon, data.nearest_school.id);
             } else {
-                alert('No schools found in the database');
+                alert('No schools found');
             }
         }
         
-        async function calculateAndShowRoute() {
-            if (!currentLocation || !currentNearestSchool) return;
-            
+        async function showRouteOnMap(lat, lon, schoolId) {
             const response = await fetch('/api/location/calculate-route', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lat: currentLocation.lat,
-                    lon: currentLocation.lon,
-                    school_id: currentNearestSchool.nearest_school.id
-                })
+                body: JSON.stringify({ lat: lat, lon: lon, school_id: schoolId })
             });
             const data = await response.json();
             
-            if (data.success && data.route) {
-                currentRoute = data.route;
-                document.getElementById('routeInfo').style.display = 'block';
-                document.getElementById('routeDetails').innerHTML = `
-                    <strong>From:</strong> ${currentRoute.start.lat.toFixed(4)}, ${currentRoute.start.lon.toFixed(4)}<br>
-                    <strong>To:</strong> ${currentRoute.end.lat.toFixed(4)}, ${currentRoute.end.lon.toFixed(4)}<br>
-                    <strong>School:</strong> ${currentRoute.school.name}<br>
-                    <strong>Distance:</strong> ${currentRoute.distance_km} km<br>
-                    <strong>Travel Time:</strong> ${currentRoute.travel_time_min} minutes<br>
-                    <strong>Route Type:</strong> Shortest path via road network
-                `;
-                drawMap();
-            } else {
-                alert('Could not calculate route');
+            if (routeMap) routeMap.remove();
+            routeMap = L.map('routeMap').setView([lat, lon], 10);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(routeMap);
+            L.marker([lat, lon]).bindPopup('Your Location').addTo(routeMap);
+            
+            if (data.success && data.route.route_points) {
+                const routePoints = data.route.route_points.map(p => [p[1], p[0]]);
+                L.polyline(routePoints, { color: '#ef4444', weight: 4 }).addTo(routeMap);
+                routeMap.fitBounds(routePoints);
             }
         }
         
-        function drawMap() {
-            const canvas = document.getElementById('routeCanvas');
-            const ctx = canvas.getContext('2d');
-            const width = canvas.clientWidth;
-            const height = 300;
-            canvas.width = width;
-            canvas.height = height;
-            
-            ctx.clearRect(0, 0, width, height);
-            ctx.fillStyle = '#f9fafb';
-            ctx.fillRect(0, 0, width, height);
-            
-            // Draw grid
-            ctx.strokeStyle = '#e5e7eb';
-            ctx.lineWidth = 0.5;
-            for (let i = 0; i < width; i += 50) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i, height);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(0, i % height);
-                ctx.lineTo(width, i % height);
-                ctx.stroke();
-            }
-            
-            // Draw schools
-            if (schoolsList.length > 0) {
-                schoolsList.forEach(school => {
-                    const x = ((school.lon - 0) / 100) * width;
-                    const y = height - ((school.lat - 0) / 100) * height;
-                    if (x >= 0 && x <= width && y >= 0 && y <= height) {
-                        ctx.fillStyle = '#1a56db';
-                        ctx.beginPath();
-                        ctx.arc(x, y, 6, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.fillStyle = 'white';
-                        ctx.font = '10px Arial';
-                        ctx.fillText('🏫', x-3, y+3);
-                    }
-                });
-            }
-            
-            // Draw location marker
-            if (currentLocation) {
-                const x = ((currentLocation.lon - 0) / 100) * width;
-                const y = height - ((currentLocation.lat - 0) / 100) * height;
-                if (x >= 0 && x <= width && y >= 0 && y <= height) {
-                    ctx.fillStyle = '#10b981';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 8, 0, 2 * Math.PI);
-                    ctx.fill();
-                    ctx.fillStyle = 'white';
-                    ctx.font = '12px Arial';
-                    ctx.fillText('📍', x-3, y+3);
-                }
-            }
-            
-            // Draw route
-            if (currentRoute && currentRoute.route_points) {
-                ctx.beginPath();
-                ctx.strokeStyle = '#ef4444';
-                ctx.lineWidth = 3;
-                let first = true;
-                currentRoute.route_points.forEach(point => {
-                    const x = ((point[0] - 0) / 100) * width;
-                    const y = height - ((point[1] - 0) / 100) * height;
-                    if (x >= 0 && x <= width && y >= 0 && y <= height) {
-                        if (first) {
-                            ctx.moveTo(x, y);
-                            first = false;
-                        } else {
-                            ctx.lineTo(x, y);
-                        }
-                    }
-                });
-                ctx.stroke();
-            }
-            
-            document.getElementById('mapLegend').innerHTML = '📍 Green: Your Location | 🏫 Blue: Schools | 🔴 Red: Route Path';
-        }
-        
-        async function loadSchoolsList() {
-            const response = await fetch('/api/location/schools-list');
-            const data = await response.json();
-            if (data.success) {
-                schoolsList = data.schools;
-                drawMap();
-            }
-        }
-        
+        // Upload and analysis functions
         async function uploadFile(type, input) {
             const file = input.files[0];
             if (!file) return;
@@ -387,56 +435,52 @@
             formData.append('file', file);
             const response = await fetch('/api/upload/' + type, { method: 'POST', body: formData });
             const data = await response.json();
-            if (data.success) {
-                const fileType = data.isGIS ? 'GIS file' : 'file';
-                alert(fileType + ' uploaded: ' + data.file.filename + (data.count ? ' (' + data.count + ' records)' : ''));
-                updateDataStatus();
-                loadSchoolsList();
-            } else {
-                alert('Error: ' + data.error);
-            }
+            alert(data.message);
+            updateDataStatus();
             input.value = '';
         }
         
         async function generateSampleData() {
             const response = await fetch('/api/generate-sample', { method: 'POST' });
             const data = await response.json();
-            if (data.success) {
-                alert('Sample data loaded: ' + data.schools + ' schools, ' + data.villages + ' villages, ' + data.roads + ' roads');
-                updateDataStatus();
-                loadSchoolsList();
-            }
-        }
-        
-        async function updateDataStatus() {
-            const response = await fetch('/api/data-status');
-            const data = await response.json();
-            document.getElementById('dataStatus').innerHTML = '<div class="col-12"><div class="alert alert-info mb-0"><i class="fas fa-info-circle"></i> Data Status: ' + data.schools + ' Schools | ' + data.villages + ' Villages | ' + data.roads + ' Roads | ' + data.results + ' Results</div></div>';
-            
-            if (data.gis_files > 0) {
-                let gisHtml = '<div class="col-12"><div class="alert alert-success mb-0"><i class="fas fa-map"></i> GIS Files Uploaded: ' + data.gis_files + '<br><small>';
-                data.gis_files_list.forEach(f => {
-                    gisHtml += f.filename + ' (' + f.extension + ') ';
-                });
-                gisHtml += '</small></div></div>';
-                document.getElementById('gisStatus').innerHTML = gisHtml;
-            }
+            alert('Sample data loaded!');
+            await updateDataStatus();
+            await loadResults();
+            updatePreviewMap();
         }
         
         async function runAnalysis() {
             const btn = document.getElementById('analyzeBtn');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+            btn.innerHTML = 'Analyzing...';
             const response = await fetch('/api/analyze', { method: 'POST' });
             const data = await response.json();
-            if (data.error) {
+            if (data.success) {
+                alert('Analysis Complete!\n' + data.message);
+                await loadResults();
+                updatePreviewMap();
+            } else {
                 alert('Error: ' + data.error);
-            } else if (data.success) {
-                alert('Analysis Complete!\n\nVillages Analyzed: ' + data.villages_analyzed + '\nUnderserved: ' + data.underserved_found + '\nProposed Roads: ' + data.proposed_roads);
-                loadResults();
             }
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-chart-line"></i> Run Accessibility Analysis';
+            btn.innerHTML = 'Run Accessibility Analysis';
+        }
+        
+        async function updateDataStatus() {
+            const response = await fetch('/api/data-status');
+            const data = await response.json();
+            document.getElementById('dataStatus').innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i> Data: ${data.schools} Schools | ${data.villages} Villages | ${data.roads} Roads | ${data.results} Results
+                        <br><small><i class="fas fa-save"></i> Saved to: ~/Desktop/School_Accessibility_Data/</small>
+                    </div>
+                </div>
+            `;
+            // Load schools for map display
+            const resultsResponse = await fetch('/api/results');
+            const resultsData = await resultsResponse.json();
+            if (resultsData.schools) schoolsData = resultsData.schools;
         }
         
         async function loadResults() {
@@ -446,15 +490,16 @@
                 displayStatistics(data.statistics);
                 displayResultsTable(data.accessibility);
                 displayProposedRoads(data.proposed_roads);
+                if (data.schools) schoolsData = data.schools;
             }
         }
         
         function displayStatistics(stats) {
             document.getElementById('statsContainer').innerHTML = `
-                <div class="col-md-3"><div class="stat-card"><div class="stat-number">${stats.total_villages}</div><div class="stat-label">Total Villages</div></div></div>
-                <div class="col-md-3"><div class="stat-card"><div class="stat-number text-poor">${stats.underserved_count}</div><div class="stat-label">Underserved (${stats.underserved_percentage}%)</div></div></div>
-                <div class="col-md-3"><div class="stat-card"><div class="stat-number text-good">${stats.highly_accessible}</div><div class="stat-label">Highly Accessible</div></div></div>
-                <div class="col-md-3"><div class="stat-card"><div class="stat-number text-moderate">${stats.moderately_accessible}</div><div class="stat-label">Moderately Accessible</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-number">${stats.total_villages}</div><div>Total Villages</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-number" style="color: #ef4444;">${stats.underserved_count}</div><div>Underserved (${stats.underserved_percentage}%)</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-number" style="color: #10b981;">${stats.highly_accessible}</div><div>Highly Accessible</div></div></div>
+                <div class="col-md-3"><div class="stat-card"><div class="stat-number" style="color: #f59e0b;">${stats.moderately_accessible}</div><div>Moderately Accessible</div></div></div>
                 <div class="col-md-12 mt-3"><hr><div class="row"><div class="col-md-4"><strong>Avg Distance:</strong> ${stats.avg_distance_km} km</div><div class="col-md-4"><strong>Avg Travel Time:</strong> ${stats.avg_travel_time_min} min</div><div class="col-md-4"><strong>Avg Connectivity:</strong> ${stats.avg_connectivity_score}</div></div></div>
             `;
         }
@@ -463,20 +508,17 @@
             const tbody = document.getElementById('resultsTable');
             tbody.innerHTML = '';
             if (!results || results.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No results available. Run analysis first.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">Run analysis first</td></tr>';
                 return;
             }
             results.forEach(r => {
                 const row = tbody.insertRow();
-                let priorityClass = (parseFloat(r.priority_score) > 0.6) ? 'priority-high' : (parseFloat(r.priority_score) > 0.3) ? 'priority-medium' : 'priority-low';
-                row.className = priorityClass;
                 row.insertCell(0).innerHTML = r.village_name;
-                row.insertCell(1).innerHTML = '<span class="badge-' + r.status + '">' + (r.accessibility_category === 'Poorly Accessible / Underserved' ? 'Underserved' : r.accessibility_category) + '</span>';
+                row.insertCell(1).innerHTML = `<span class="badge-${r.status}">${r.accessibility_category}</span>`;
                 row.insertCell(2).innerHTML = r.distance_km;
                 row.insertCell(3).innerHTML = r.travel_time_min;
-                row.insertCell(4).innerHTML = r.road_connectivity_score;
-                row.insertCell(5).innerHTML = '<span class="fw-bold text-' + r.status + '">' + r.priority_score + '</span>';
-                row.insertCell(6).innerHTML = r.population;
+                row.insertCell(4).innerHTML = r.priority_score;
+                row.insertCell(5).innerHTML = r.population;
             });
         }
         
@@ -489,25 +531,34 @@
             let html = '<div class="row">';
             roads.forEach(road => {
                 const priorityIcon = road.priority_level === 1 ? '🔴' : '🟡';
-                html += '<div class="col-md-6 mb-3"><div class="p-3 border rounded priority-' + (road.priority_level === 1 ? 'high' : 'medium') + '"><strong>' + priorityIcon + ' ' + road.road_id + '</strong><div class="mt-2 small"><div><i class="fas fa-flag-checkered"></i> From: ' + road.from_village + '</div><div><i class="fas fa-school"></i> To: ' + road.to_school + '</div><div><i class="fas fa-road"></i> Length: ' + road.length_km + ' km</div><div><i class="fas fa-dollar-sign"></i> Cost: $' + Math.round(road.cost_estimate / 1000) + 'K</div></div></div></div>';
+                html += `
+                    <div class="col-md-6">
+                        <div class="proposed-road-item">
+                            <strong>${priorityIcon} ${road.road_id}</strong>
+                            <div class="mt-2 small">
+                                <div><i class="fas fa-flag-checkered"></i> From: ${road.from_village}</div>
+                                <div><i class="fas fa-school"></i> To: ${road.to_school}</div>
+                                <div><i class="fas fa-road"></i> Length: ${road.length_km} km</div>
+                                <div><i class="fas fa-chart-line"></i> Priority Score: ${road.priority_score}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
             });
             html += '</div>';
             container.innerHTML = html;
         }
         
-        function downloadGeoJSON(name) {
-            window.open('/api/geojson/' + name, '_blank');
-        }
-        
         // Initialize
+        initPreviewMap();
         updateDataStatus();
         loadResults();
-        loadSchoolsList();
-        setInterval(updateDataStatus, 10000);
-        setInterval(loadSchoolsList, 15000);
+        setInterval(updateDataStatus, 30000);
         
-        // Handle canvas resize
-        window.addEventListener('resize', () => drawMap());
+        // Close modal on escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeMapModal();
+        });
     </script>
 </body>
 </html>
