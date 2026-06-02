@@ -138,7 +138,6 @@ function findShortestPath(village, school) {
 function generateRwandanSampleData() {
     console.log('Generating Rwandan sample data...');
     
-    // Rwandan Schools (real approximate coordinates)
     database.schools = [
         { id: 'SCH_001', name: 'Ecole Secondaire de Kigali', lat: -1.9441, lon: 30.0619, capacity: 1200 },
         { id: 'SCH_002', name: 'Groupe Scolaire Butare', lat: -2.6017, lon: 29.7368, capacity: 800 },
@@ -152,7 +151,6 @@ function generateRwandanSampleData() {
         { id: 'SCH_010', name: 'College Adventiste de Gitwe', lat: -2.1167, lon: 29.8667, capacity: 450 }
     ];
     
-    // Rwandan Villages with coordinates and populations
     database.villages = [
         { id: 'VIL_001', name: 'Nyarugenge', lat: -1.9441, lon: 30.0619, population: 85000 },
         { id: 'VIL_002', name: 'Butare', lat: -2.6017, lon: 29.7368, population: 50000 },
@@ -181,7 +179,6 @@ function generateRwandanSampleData() {
         { id: 'VIL_025', name: 'Rusizi', lat: -2.4833, lon: 28.9000, population: 31000 }
     ];
     
-    // Rwandan Roads (connecting major towns)
     database.roads = [
         { id: 'RD_001', type: 'primary', start_lat: -1.9441, start_lon: 30.0619, end_lat: -2.6017, end_lon: 29.7368, length_km: 135.5 },
         { id: 'RD_002', type: 'primary', start_lat: -1.9441, start_lon: 30.0619, end_lat: -1.5000, end_lon: 29.6500, length_km: 85.2 },
@@ -327,19 +324,6 @@ function saveResultsToDesktop() {
         fs.writeFileSync(path.join(OUTPUTS_PATH, 'rwanda_summary_statistics.csv'), summaryCSV.join('\n'));
     }
     
-    const projectionInfo = `Rwanda Geographic Information
-Country: Republic of Rwanda
-Projection: WGS 84 / UTM zone 36S
-EPSG Code: 32736
-Coordinate System: Projected
-Units: Meters
-Datum: WGS 84
-UTM Zone: 36 South
-Valid Area: Rwanda (East Africa)
-Generated: ${new Date().toISOString()}
-`;
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'RWANDA_PROJECTION_INFO.txt'), projectionInfo);
-    
     console.log(`📁 Rwanda results saved to Desktop: ${OUTPUTS_PATH}`);
 }
 
@@ -359,6 +343,7 @@ function generateAndSaveGeoJSON() {
                 priority_score: parseFloat(r.priority_score),
                 population: r.population,
                 status: r.status,
+                nearest_school: r.nearest_school_name,
                 country: "Rwanda",
                 projection: "EPSG:32736 - WGS 84 / UTM zone 36S"
             }
@@ -382,6 +367,7 @@ function generateAndSaveGeoJSON() {
                 distance_km: parseFloat(r.distance_km),
                 priority_score: parseFloat(r.priority_score),
                 population: r.population,
+                nearest_school: r.nearest_school_name,
                 country: "Rwanda"
             }
         };
@@ -403,6 +389,7 @@ function generateAndSaveGeoJSON() {
                 village: r.village_name,
                 priority_score: parseFloat(r.priority_score),
                 distance_km: parseFloat(r.distance_km),
+                population: r.population,
                 country: "Rwanda"
             }
         };
@@ -427,6 +414,7 @@ function generateAndSaveGeoJSON() {
                 to_school: r.to_school,
                 length_km: parseFloat(r.length_km),
                 priority_level: r.priority_level,
+                priority_score: parseFloat(r.priority_score),
                 country: "Rwanda"
             }
         };
@@ -604,60 +592,211 @@ app.get('/api/geojson/:type', (req, res) => {
     }
 });
 
+// Enhanced export endpoints with proper formatting
 app.get('/api/export/:format/:type', (req, res) => {
     const { format, type } = req.params;
-    const filePath = path.join(OUTPUTS_PATH, `RWANDA_${type}.geojson`);
+    const geojsonPath = path.join(OUTPUTS_PATH, `RWANDA_${type}.geojson`);
     
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'No data available' });
+    if (!fs.existsSync(geojsonPath)) {
+        return res.status(404).json({ error: 'No data available. Run analysis first.' });
     }
     
-    const geojsonData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const geojsonData = JSON.parse(fs.readFileSync(geojsonPath, 'utf8'));
     
     if (format === 'geojson') {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.geojson`);
         res.send(JSON.stringify(geojsonData, null, 2));
-    } else if (format === 'csv') {
+    }
+    else if (format === 'json') {
+        const jsonData = {
+            metadata: {
+                title: `Rwanda ${type.replace('_', ' ')} Data`,
+                projection: "EPSG:32736 - WGS 84 / UTM zone 36S",
+                country: "Rwanda",
+                generated: new Date().toISOString(),
+                total_features: geojsonData.features.length
+            },
+            data: geojsonData.features.map(f => ({
+                ...f.properties,
+                coordinates: f.geometry.coordinates
+            }))
+        };
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.json`);
+        res.send(JSON.stringify(jsonData, null, 2));
+    }
+    else if (format === 'csv') {
         let csvData = '';
         if (geojsonData.features && geojsonData.features.length > 0) {
             const headers = Object.keys(geojsonData.features[0].properties);
             csvData = headers.join(',') + '\n';
             geojsonData.features.forEach(feature => {
-                const row = headers.map(h => feature.properties[h] || '').join(',');
+                const row = headers.map(h => {
+                    let val = feature.properties[h] || '';
+                    if (typeof val === 'string' && val.includes(',')) val = `"${val}"`;
+                    return val;
+                }).join(',');
                 csvData += row + '\n';
             });
         }
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.csv`);
         res.send(csvData);
-    } else if (format === 'json') {
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.json`);
-        res.send(JSON.stringify(geojsonData, null, 2));
-    } else if (format === 'kml') {
-        let kmlData = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>Rwanda ${type}</name>\n';
+    }
+    else if (format === 'kml') {
+        let kmlData = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>Rwanda ${type.replace('_', ' ')}</name>
+  <description>School Accessibility Analysis for Rwanda - EPSG:32736 Projection</description>
+  <Style id="villageStyle">
+    <IconStyle>
+      <scale>1.2</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png</href></Icon>
+    </IconStyle>
+  </Style>
+  <Style id="roadStyle">
+    <LineStyle>
+      <color>ff0000ff</color>
+      <width>4</width>
+    </LineStyle>
+  </Style>`;
+        
         geojsonData.features.forEach(feature => {
             if (feature.geometry.type === 'Point') {
-                kmlData += '<Placemark>\n<name>' + (feature.properties.village || 'Location') + '</name>\n<Point>\n<coordinates>' + feature.geometry.coordinates[0] + ',' + feature.geometry.coordinates[1] + ',0</coordinates>\n</Point>\n</Placemark>\n';
+                const [x, y] = feature.geometry.coordinates;
+                kmlData += `
+  <Placemark>
+    <name>${feature.properties.village || feature.properties.name || 'Location'}</name>
+    <description>
+      ${feature.properties.distance_km ? `Distance to school: ${feature.properties.distance_km} km\\n` : ''}
+      ${feature.properties.travel_time_min ? `Travel time: ${feature.properties.travel_time_min} minutes\\n` : ''}
+      ${feature.properties.population ? `Population: ${feature.properties.population}\\n` : ''}
+      ${feature.properties.priority_score ? `Priority Score: ${feature.properties.priority_score}\\n` : ''}
+      ${feature.properties.category ? `Accessibility: ${feature.properties.category}\\n` : ''}
+      Projection: EPSG:32736 (WGS 84 / UTM zone 36S)
+      Country: Rwanda
+    </description>
+    <styleUrl>#villageStyle</styleUrl>
+    <Point>
+      <coordinates>${x},${y},0</coordinates>
+    </Point>
+  </Placemark>`;
+            } else if (feature.geometry.type === 'LineString') {
+                kmlData += `
+  <Placemark>
+    <name>${feature.properties.road_id || 'Proposed Road'}</name>
+    <description>
+      From: ${feature.properties.from_village || 'N/A'}\\n
+      To: ${feature.properties.to_school || 'N/A'}\\n
+      Length: ${feature.properties.length_km || 0} km\\n
+      Priority Level: ${feature.properties.priority_level || 'N/A'}\\n
+      Country: Rwanda
+    </description>
+    <styleUrl>#roadStyle</styleUrl>
+    <LineString>
+      <coordinates>
+        ${feature.geometry.coordinates.map(c => `${c[0]},${c[1]},0`).join('\n        ')}
+      </coordinates>
+    </LineString>
+  </Placemark>`;
             }
         });
-        kmlData += '</Document>\n</kml>';
+        
+        kmlData += `
+</Document>
+</kml>`;
+        
         res.setHeader('Content-Type', 'application/vnd.google-earth.kml+xml');
         res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.kml`);
         res.send(kmlData);
-    } else if (format === 'gpx') {
-        let gpxData = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Rwanda School System">\n';
+    }
+    else if (format === 'gpx') {
+        let gpxData = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Rwanda School Accessibility System" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Rwanda ${type.replace('_', ' ')}</name>
+    <desc>School Accessibility Analysis for Rwanda - EPSG:32736 Projection</desc>
+    <time>${new Date().toISOString()}</time>
+  </metadata>`;
+        
         geojsonData.features.forEach(feature => {
             if (feature.geometry.type === 'Point') {
-                gpxData += '<wpt lat="' + feature.geometry.coordinates[1] + '" lon="' + feature.geometry.coordinates[0] + '">\n<name>' + (feature.properties.village || 'Location') + '</name>\n</wpt>\n';
+                const [x, y] = feature.geometry.coordinates;
+                gpxData += `
+  <wpt lat="${y}" lon="${x}">
+    <name>${feature.properties.village || feature.properties.name || 'Location'}</name>
+    <desc>
+      ${feature.properties.distance_km ? `Distance: ${feature.properties.distance_km} km - ` : ''}
+      ${feature.properties.travel_time_min ? `Travel: ${feature.properties.travel_time_min} min - ` : ''}
+      ${feature.properties.population ? `Population: ${feature.properties.population} - ` : ''}
+      ${feature.properties.category ? `Status: ${feature.properties.category}` : ''}
+    </desc>
+    <cmt>Rwanda School Accessibility Data</cmt>
+  </wpt>`;
+            } else if (feature.geometry.type === 'LineString') {
+                const coords = feature.geometry.coordinates.map(c => `${c[1]},${c[0]}`).join(' ');
+                gpxData += `
+  <trk>
+    <name>${feature.properties.road_id || 'Proposed Road'}</name>
+    <desc>From: ${feature.properties.from_village || 'N/A'} to ${feature.properties.to_school || 'N/A'} - Length: ${feature.properties.length_km || 0} km</desc>
+    <trkseg>
+      <trkpt lat="${feature.geometry.coordinates[0][1]}" lon="${feature.geometry.coordinates[0][0]}">
+        <ele>0</ele>
+      </trkpt>
+      <trkpt lat="${feature.geometry.coordinates[1][1]}" lon="${feature.geometry.coordinates[1][0]}">
+        <ele>0</ele>
+      </trkpt>
+    </trkseg>
+  </trk>`;
             }
         });
-        gpxData += '</gpx>';
+        
+        gpxData += `
+</gpx>`;
+        
         res.setHeader('Content-Type', 'application/gpx+xml');
         res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}.gpx`);
         res.send(gpxData);
-    } else {
+    }
+    else if (format === 'shapefile') {
+        const AdmZip = require('adm-zip');
+        const zip = new AdmZip();
+        zip.addFile(`RWANDA_${type}.geojson`, Buffer.from(JSON.stringify(geojsonData, null, 2)));
+        
+        const readme = `RWANDA ${type.toUpperCase()} DATA - Shapefile Package
+
+This zip contains ${type}.geojson file with Rwanda data.
+
+To convert to Shapefile:
+1. Open QGIS
+2. Layer > Add Layer > Add GeoJSON Layer
+3. Select the GeoJSON file
+4. Right-click layer > Export > Save Features As
+5. Format: ESRI Shapefile
+6. CRS: EPSG:32736 - WGS 84 / UTM zone 36S
+7. Save
+
+Projection Information:
+- Name: WGS 84 / UTM zone 36S
+- EPSG: 32736
+- Valid for: Rwanda
+- Units: Meters
+
+Data Description:
+- Total Features: ${geojsonData.features.length}
+- Country: Rwanda
+- Generated: ${new Date().toISOString()}
+`;
+        
+        zip.addFile('README.txt', Buffer.from(readme, 'utf8'));
+        const buffer = zip.toBuffer();
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename=RWANDA_${type}_shapefile.zip`);
+        res.send(buffer);
+    }
+    else {
         res.status(400).json({ error: 'Unsupported format' });
     }
 });
@@ -708,5 +847,13 @@ app.listen(PORT, () => {
     console.log('   • rwanda_accessibility_results.csv');
     console.log('   • rwanda_proposed_roads.csv');
     console.log('   • rwanda_summary_statistics.csv');
+    console.log('============================================================');
+    console.log('\n📋 Export Formats Available:');
+    console.log('   • GeoJSON - Full GIS data with properties');
+    console.log('   • CSV - Spreadsheet format');
+    console.log('   • JSON - Raw data with metadata');
+    console.log('   • KML - Google Earth compatible');
+    console.log('   • GPX - GPS devices compatible');
+    console.log('   • Shapefile (ZIP) - ESRI Shapefile package');
     console.log('============================================================\n');
 });
