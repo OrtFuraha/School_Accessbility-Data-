@@ -11,60 +11,48 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        
         .header { background: #1a56db; color: white; padding: 24px 32px; margin-bottom: 24px; }
         .header h1 { font-size: 24px; font-weight: 600; margin: 0; }
         .header p { margin: 8px 0 0 0; font-size: 14px; }
-        
         .card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 20px; overflow: hidden; }
         .card-header { background: #f9fafb; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; }
         .card-body { padding: 20px; }
-        
         .stat-card { text-align: center; padding: 16px; background: #f9fafb; border-radius: 8px; }
         .stat-number { font-size: 32px; font-weight: 700; }
-        
         .badge-good { background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
         .badge-moderate { background: #f59e0b; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
         .badge-poor { background: #ef4444; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
-        
         .btn-primary { background: #1a56db; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 500; color: white; cursor: pointer; }
         .btn-primary:hover { background: #1e40af; }
         .btn-outline { background: white; border: 1px solid #d1d5db; padding: 10px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; }
         .btn-outline:hover { background: #f9fafb; }
         .btn-success { background: #10b981; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 500; color: white; cursor: pointer; }
         .btn-success:hover { background: #059669; }
-        
         .upload-area { border: 2px dashed #d1d5db; border-radius: 12px; padding: 24px; text-align: center; background: #fafafa; cursor: pointer; }
         .upload-area:hover { border-color: #1a56db; background: #eff6ff; }
-        
         .data-table { width: 100%; font-size: 13px; border-collapse: collapse; }
         .data-table th { text-align: left; padding: 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
         .data-table td { padding: 12px; border-bottom: 1px solid #f5f5f5; }
-        
         .priority-high { border-left: 3px solid #ef4444; }
         .priority-medium { border-left: 3px solid #f59e0b; }
         .priority-low { border-left: 3px solid #10b981; }
-        
         .container-fluid { padding: 0 24px 24px 24px; }
         .row { margin: 0 -12px; }
         .col, [class*="col-"] { padding: 0 12px; }
-        
-        .map-container { height: 500px; border-radius: 8px; margin-top: 10px; }
         .map-legend { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; font-size: 12px; }
         .map-legend-item { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 5px; }
-        
         .map-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; }
         .map-modal-content { position: relative; background: white; margin: 3% auto; width: 90%; height: 90%; border-radius: 12px; overflow: hidden; }
         .map-modal-header { background: #1a56db; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
         .map-modal-body { height: calc(100% - 60px); padding: 15px; }
         .close-map { color: white; font-size: 28px; cursor: pointer; line-height: 20px; }
         .close-map:hover { color: #ddd; }
-        
         .map-view-btn { margin: 5px; }
         .route-info { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; margin-top: 12px; }
-        
         .proposed-road-item { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .proposed-road-item strong { color: #1a56db; }
+        .export-select { width: 120px; padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 12px; margin-right: 8px; }
+        .export-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -143,33 +131,77 @@
             </div>
         </div>
         
-        <!-- Interactive Maps -->
+        <!-- Interactive Maps with Export -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-map"></i> Interactive Maps</div>
+            <div class="card-header"><i class="fas fa-map"></i> Interactive Maps & Export</div>
             <div class="card-body">
                 <div class="row mb-3">
                     <div class="col-md-3">
                         <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('accessibility_map')">
                             <i class="fas fa-map"></i> Accessibility Map
                         </button>
+                        <div class="export-group">
+                            <select id="format_accessibility_map" class="export-select">
+                                <option value="geojson">GeoJSON</option>
+                                <option value="csv">CSV</option>
+                                <option value="json">JSON</option>
+                                <option value="kml">KML (Google Earth)</option>
+                                <option value="gpx">GPX (GPS)</option>
+                                <option value="shapefile">Shapefile (ZIP)</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="exportData('accessibility_map', document.getElementById('format_accessibility_map').value)">Download</button>
+                        </div>
                         <small class="text-muted d-block mt-1">View all villages with accessibility status</small>
                     </div>
                     <div class="col-md-3">
                         <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('underserved_areas')">
                             <i class="fas fa-exclamation-triangle"></i> Underserved Areas
                         </button>
+                        <div class="export-group">
+                            <select id="format_underserved_areas" class="export-select">
+                                <option value="geojson">GeoJSON</option>
+                                <option value="csv">CSV</option>
+                                <option value="json">JSON</option>
+                                <option value="kml">KML (Google Earth)</option>
+                                <option value="gpx">GPX (GPS)</option>
+                                <option value="shapefile">Shapefile (ZIP)</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="exportData('underserved_areas', document.getElementById('format_underserved_areas').value)">Download</button>
+                        </div>
                         <small class="text-muted d-block mt-1">Areas needing intervention</small>
                     </div>
                     <div class="col-md-3">
                         <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('priority_zones')">
                             <i class="fas fa-flag"></i> Priority Zones
                         </button>
+                        <div class="export-group">
+                            <select id="format_priority_zones" class="export-select">
+                                <option value="geojson">GeoJSON</option>
+                                <option value="csv">CSV</option>
+                                <option value="json">JSON</option>
+                                <option value="kml">KML (Google Earth)</option>
+                                <option value="gpx">GPX (GPS)</option>
+                                <option value="shapefile">Shapefile (ZIP)</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="exportData('priority_zones', document.getElementById('format_priority_zones').value)">Download</button>
+                        </div>
                         <small class="text-muted d-block mt-1">High priority intervention areas</small>
                     </div>
                     <div class="col-md-3">
                         <button class="btn btn-outline w-100 map-view-btn" onclick="showMap('proposed_roads')">
                             <i class="fas fa-road"></i> Proposed Roads
                         </button>
+                        <div class="export-group">
+                            <select id="format_proposed_roads" class="export-select">
+                                <option value="geojson">GeoJSON</option>
+                                <option value="csv">CSV</option>
+                                <option value="json">JSON</option>
+                                <option value="kml">KML (Google Earth)</option>
+                                <option value="gpx">GPX (GPS)</option>
+                                <option value="shapefile">Shapefile (ZIP)</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="exportData('proposed_roads', document.getElementById('format_proposed_roads').value)">Download</button>
+                        </div>
                         <small class="text-muted d-block mt-1">Suggested road improvements</small>
                     </div>
                 </div>
@@ -199,11 +231,20 @@
             </div>
         </div>
         
-        <!-- Proposed Road Improvements (No Cost) -->
+        <!-- Proposed Road Improvements -->
         <div class="card">
             <div class="card-header"><i class="fas fa-road"></i> Proposed Road Improvements</div>
             <div class="card-body">
                 <div id="proposedRoads"></div>
+                <div class="mt-3 text-center">
+                    <select id="format_proposed_export" class="export-select" style="width: auto;">
+                        <option value="csv">CSV</option>
+                        <option value="geojson">GeoJSON</option>
+                        <option value="json">JSON</option>
+                        <option value="kml">KML</option>
+                    </select>
+                    <button class="btn btn-outline btn-sm" onclick="exportData('proposed_roads', document.getElementById('format_proposed_export').value)"><i class="fas fa-download"></i> Export</button>
+                </div>
             </div>
         </div>
     </div>
@@ -226,6 +267,15 @@
         let routeMap = null;
         let previewMap = null;
         let schoolsData = [];
+        
+        // Export function - now selects format from dropdown
+        function exportData(type, format) {
+            if (format === 'shapefile') {
+                window.open(`/api/export/shapefile/${type}`, '_blank');
+            } else {
+                window.open(`/api/export/${format}/${type}`, '_blank');
+            }
+        }
         
         // Initialize preview map
         function initPreviewMap() {
@@ -260,9 +310,7 @@
                         if (data.features && data.features.length > 0) {
                             const geojsonLayer = L.geoJSON(data, {
                                 pointToLayer: function(feature, latlng) {
-                                    if (type === 'proposed_roads') {
-                                        return null;
-                                    }
+                                    if (type === 'proposed_roads') return null;
                                     let color = '#10b981';
                                     if (type === 'accessibility_map' && feature.properties) {
                                         if (feature.properties.status === 'poor') color = '#ef4444';
@@ -291,15 +339,6 @@
                                 }
                             }).addTo(currentMap);
                             
-                            // Add schools layer for accessibility map
-                            if (type === 'accessibility_map' && schoolsData.length > 0) {
-                                schoolsData.forEach(school => {
-                                    L.marker([school.lat, school.lon], {
-                                        icon: L.divIcon({ className: 'school-marker', html: '🏫', iconSize: [20, 20] })
-                                    }).bindPopup('<b>' + school.name + '</b><br>School').addTo(currentMap);
-                                });
-                            }
-                            
                             const bounds = geojsonLayer.getBounds();
                             if (bounds.isValid()) currentMap.fitBounds(bounds);
                         } else {
@@ -314,48 +353,47 @@
             }, 100);
         }
         
-        // Update preview map
-        async function updatePreviewMap() {
+        function updatePreviewMap() {
             if (!previewMap) initPreviewMap();
             
-            const response = await fetch('/api/results');
-            const data = await response.json();
-            
-            previewMap.eachLayer(layer => {
-                if (layer instanceof L.GeoJSON) previewMap.removeLayer(layer);
-                if (layer instanceof L.Marker && layer.options.icon) previewMap.removeLayer(layer);
-            });
-            
-            if (data.accessibility && data.accessibility.length > 0) {
-                data.accessibility.forEach(village => {
-                    let color = '#10b981';
-                    if (village.status === 'poor') color = '#ef4444';
-                    else if (village.status === 'moderate') color = '#f59e0b';
-                    
-                    L.circleMarker([village.lat, village.lon], {
-                        radius: 6,
-                        fillColor: color,
-                        color: '#000',
-                        weight: 1,
-                        fillOpacity: 0.8
-                    }).bindPopup('<b>' + village.village_name + '</b><br>Distance: ' + village.distance_km + ' km<br>Category: ' + village.accessibility_category)
-                      .addTo(previewMap);
-                });
-                
-                // Add schools
-                if (data.schools) {
-                    data.schools.forEach(school => {
-                        L.marker([school.lat, school.lon], {
-                            icon: L.divIcon({ className: 'school-marker', html: '🏫', iconSize: [20, 20] })
-                        }).bindPopup('<b>' + school.name + '</b>').addTo(previewMap);
+            fetch('/api/results')
+                .then(response => response.json())
+                .then(data => {
+                    previewMap.eachLayer(layer => {
+                        if (layer instanceof L.GeoJSON) previewMap.removeLayer(layer);
+                        if (layer instanceof L.Marker && layer.options.icon) previewMap.removeLayer(layer);
                     });
-                }
-                
-                if (data.accessibility.length > 0) {
-                    const bounds = L.latLngBounds(data.accessibility.map(v => [v.lat, v.lon]));
-                    if (bounds.isValid()) previewMap.fitBounds(bounds);
-                }
-            }
+                    
+                    if (data.accessibility && data.accessibility.length > 0) {
+                        data.accessibility.forEach(village => {
+                            let color = '#10b981';
+                            if (village.status === 'poor') color = '#ef4444';
+                            else if (village.status === 'moderate') color = '#f59e0b';
+                            
+                            L.circleMarker([village.lat, village.lon], {
+                                radius: 6,
+                                fillColor: color,
+                                color: '#000',
+                                weight: 1,
+                                fillOpacity: 0.8
+                            }).bindPopup('<b>' + village.village_name + '</b><br>Distance: ' + village.distance_km + ' km<br>Category: ' + village.accessibility_category)
+                              .addTo(previewMap);
+                        });
+                        
+                        if (data.schools) {
+                            data.schools.forEach(school => {
+                                L.marker([school.lat, school.lon], {
+                                    icon: L.divIcon({ className: 'school-marker', html: '🏫', iconSize: [20, 20] })
+                                }).bindPopup('<b>' + school.name + '</b>').addTo(previewMap);
+                            });
+                        }
+                        
+                        if (data.accessibility.length > 0) {
+                            const bounds = L.latLngBounds(data.accessibility.map(v => [v.lat, v.lon]));
+                            if (bounds.isValid()) previewMap.fitBounds(bounds);
+                        }
+                    }
+                });
         }
         
         function closeMapModal() {
@@ -477,7 +515,6 @@
                     </div>
                 </div>
             `;
-            // Load schools for map display
             const resultsResponse = await fetch('/api/results');
             const resultsData = await resultsResponse.json();
             if (resultsData.schools) schoolsData = resultsData.schools;
