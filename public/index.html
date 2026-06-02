@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>School Accessibility Analysis System</title>
+    <title>School Accessibility Analysis System - Rwanda Projection</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -53,12 +54,13 @@
         .proposed-road-item strong { color: #1a56db; }
         .export-select { width: 120px; padding: 6px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 12px; margin-right: 8px; }
         .export-group { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .projection-badge { background: #e0e7ff; color: #1a56db; padding: 4px 12px; border-radius: 20px; font-size: 11px; display: inline-block; margin-left: 10px; }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="container-fluid">
-            <h1><i class="fas fa-school"></i> School Accessibility Analysis System</h1>
+            <h1><i class="fas fa-school"></i> School Accessibility Analysis System <span class="projection-badge"><i class="fas fa-map"></i> EPSG:32736 - Rwanda UTM 36S</span></h1>
             <p>GIS-based analysis for identifying underserved rural areas and planning road improvements</p>
         </div>
     </div>
@@ -66,13 +68,13 @@
     <div class="container-fluid">
         <!-- Location Routing -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-location-dot"></i> Location-Based Routing</div>
+            <div class="card-header"><i class="fas fa-location-dot"></i> Location-Based Routing (WGS 84 / UTM zone 36S)</div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-4">
                         <button class="btn btn-success w-100 mb-2" onclick="getCurrentLocation()"><i class="fas fa-satellite-dish"></i> Use GPS Location</button>
-                        <input type="text" id="manualLat" class="form-control mb-2" placeholder="Latitude (e.g., -1.2833)">
-                        <input type="text" id="manualLon" class="form-control mb-2" placeholder="Longitude (e.g., 36.8167)">
+                        <input type="text" id="manualLat" class="form-control mb-2" placeholder="Latitude (e.g., -2.0)">
+                        <input type="text" id="manualLon" class="form-control mb-2" placeholder="Longitude (e.g., 30.0)">
                         <button class="btn btn-primary w-100" onclick="setManualLocation()"><i class="fas fa-location-dot"></i> Set Manual Location</button>
                         <div id="routeResult" class="mt-3" style="display:none;"></div>
                     </div>
@@ -133,7 +135,7 @@
         
         <!-- Interactive Maps with Export -->
         <div class="card">
-            <div class="card-header"><i class="fas fa-map"></i> Interactive Maps & Export</div>
+            <div class="card-header"><i class="fas fa-map"></i> Interactive Maps (Rwanda UTM Zone 36S - EPSG:32736)</div>
             <div class="card-body">
                 <div class="row mb-3">
                     <div class="col-md-3">
@@ -253,7 +255,7 @@
     <div id="mapModal" class="map-modal">
         <div class="map-modal-content">
             <div class="map-modal-header">
-                <h5 id="modalTitle" class="mb-0">Accessibility Map</h5>
+                <h5 id="modalTitle" class="mb-0">Accessibility Map (Rwanda UTM 36S - EPSG:32736)</h5>
                 <span class="close-map" onclick="closeMapModal()">&times;</span>
             </div>
             <div class="map-modal-body">
@@ -268,7 +270,10 @@
         let previewMap = null;
         let schoolsData = [];
         
-        // Export function - now selects format from dropdown
+        // Define Rwanda UTM projection EPSG:32736 (WGS 84 / UTM zone 36S)
+        proj4.defs("EPSG:32736", "+proj=utm +zone=36 +south +datum=WGS84 +units=m +no_defs");
+        
+        // Export function
         function exportData(type, format) {
             if (format === 'shapefile') {
                 window.open(`/api/export/shapefile/${type}`, '_blank');
@@ -277,21 +282,25 @@
             }
         }
         
-        // Initialize preview map
+        // Initialize preview map with Rwanda focus
         function initPreviewMap() {
-            previewMap = L.map('previewMap').setView([50, 50], 5);
+            previewMap = L.map('previewMap').setView([-2.0, 30.0], 8);
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                maxZoom: 18
             }).addTo(previewMap);
+            
+            // Add scale bar
+            L.control.scale({ metric: true, imperial: false }).addTo(previewMap);
         }
         
         // Show full map in modal
         async function showMap(type) {
             const titles = {
-                'accessibility_map': 'Accessibility Map - Village Accessibility Status',
-                'underserved_areas': 'Underserved Areas - Villages Needing Intervention',
-                'priority_zones': 'Priority Zones - High Priority Intervention Areas',
-                'proposed_roads': 'Proposed Roads - Suggested Road Improvements'
+                'accessibility_map': 'Accessibility Map - Village Accessibility Status (Rwanda UTM 36S)',
+                'underserved_areas': 'Underserved Areas - Villages Needing Intervention (Rwanda UTM 36S)',
+                'priority_zones': 'Priority Zones - High Priority Intervention Areas (Rwanda UTM 36S)',
+                'proposed_roads': 'Proposed Roads - Suggested Road Improvements (Rwanda UTM 36S)'
             };
             
             document.getElementById('modalTitle').innerHTML = titles[type];
@@ -299,10 +308,13 @@
             
             setTimeout(() => {
                 if (currentMap) currentMap.remove();
-                currentMap = L.map('fullMap').setView([50, 50], 5);
+                currentMap = L.map('fullMap').setView([-2.0, 30.0], 8);
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                     attribution: '&copy; OpenStreetMap'
                 }).addTo(currentMap);
+                
+                // Add scale bar
+                L.control.scale({ metric: true, imperial: false }).addTo(currentMap);
                 
                 fetch(`/api/geojson/${type}`)
                     .then(response => response.json())
@@ -342,13 +354,13 @@
                             const bounds = geojsonLayer.getBounds();
                             if (bounds.isValid()) currentMap.fitBounds(bounds);
                         } else {
-                            currentMap.setView([50, 50], 5);
-                            L.popup().setLatLng([50, 50]).setContent('No data available. Run analysis first.').openOn(currentMap);
+                            currentMap.setView([-2.0, 30.0], 8);
+                            L.popup().setLatLng([-2.0, 30.0]).setContent('No data available. Run analysis first.').openOn(currentMap);
                         }
                     })
                     .catch(() => {
-                        currentMap.setView([50, 50], 5);
-                        L.popup().setLatLng([50, 50]).setContent('No data available. Run analysis first.').openOn(currentMap);
+                        currentMap.setView([-2.0, 30.0], 8);
+                        L.popup().setLatLng([-2.0, 30.0]).setContent('No data available. Run analysis first.').openOn(currentMap);
                     });
             }, 100);
         }
@@ -362,6 +374,7 @@
                     previewMap.eachLayer(layer => {
                         if (layer instanceof L.GeoJSON) previewMap.removeLayer(layer);
                         if (layer instanceof L.Marker && layer.options.icon) previewMap.removeLayer(layer);
+                        if (layer instanceof L.Control.Scale) return;
                     });
                     
                     if (data.accessibility && data.accessibility.length > 0) {
@@ -457,6 +470,7 @@
             routeMap = L.map('routeMap').setView([lat, lon], 10);
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(routeMap);
             L.marker([lat, lon]).bindPopup('Your Location').addTo(routeMap);
+            L.control.scale({ metric: true, imperial: false }).addTo(routeMap);
             
             if (data.success && data.route.route_points) {
                 const routePoints = data.route.route_points.map(p => [p[1], p[0]]);
@@ -512,6 +526,7 @@
                     <div class="alert alert-info mb-0">
                         <i class="fas fa-info-circle"></i> Data: ${data.schools} Schools | ${data.villages} Villages | ${data.roads} Roads | ${data.results} Results
                         <br><small><i class="fas fa-save"></i> Saved to: ~/Desktop/School_Accessibility_Data/</small>
+                        <br><small><i class="fas fa-map"></i> Projection: WGS 84 / UTM zone 36S (EPSG:32736)</small>
                     </div>
                 </div>
             `;
