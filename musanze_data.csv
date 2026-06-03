@@ -1,0 +1,22 @@
+type,name,lat,lon,population,capacity
+school,Ecole Secondaire Musanze,-1.4950,29.6350,0,1200
+school,GS Musanze,-1.4900,29.6300,0,800
+school,College de Musanze,-1.5000,29.6400,0,600
+school,Ecole Primaire Musanze,-1.4850,29.6250,0,400
+school,Lycee de Musanze,-1.5050,29.6450,0,900
+village,Musanze Center,-1.4950,29.6350,45000,0
+village,Cyuve,-1.4800,29.6200,12000,0
+village,Shingiro,-1.5100,29.6500,8000,0
+village,Kinigi,-1.4700,29.6100,15000,0
+village,Nyange,-1.5200,29.6600,6000,0
+village,Remera,-1.4600,29.6000,10000,0
+village,Busogo,-1.5300,29.6700,5000,0
+village,Gataraga,-1.4450,29.5900,7000,0
+village,Nkotsi,-1.5500,29.6800,4000,0
+village,Kabaya,-1.4400,29.5800,3000,0
+road,primary,-1.4950,29.6350,-1.4800,29.6200,12.5
+road,secondary,-1.4950,29.6350,-1.5100,29.6500,15.3
+road,secondary,-1.4800,29.6200,-1.4700,29.6100,8.2
+road,tertiary,-1.5100,29.6500,-1.5200,29.6600,6.5
+road,tertiary,-1.4700,29.6100,-1.4600,29.6000,5.8
+road,primary,-1.4950,29.6350,-1.5000,29.6400,3.2
