@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GeoServer Configuration Guide</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; }
+        code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+        pre { background: #f0f0f0; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ GeoServer Configuration for School Accessibility</h1>
+        
+        <h2>WFS Endpoints (Already Available)</h2>
+        <ul>
+            <li><a href="/wfs/schools">/wfs/schools</a> - Schools data in GeoJSON</li>
+            <li><a href="/wfs/sectors">/wfs/sectors</a> - Sectors data in GeoJSON</li>
+            <li><a href="/wfs/roads">/wfs/roads</a> - Roads data in GeoJSON</li>
+        </ul>
+        
+        <h2>GeoServer Setup (Optional)</h2>
+        <p>To use full GeoServer capabilities:</p>
+        <pre>
+1. Download GeoServer: https://geoserver.org/download/
+2. Install and start GeoServer (default: http://localhost:8080/geoserver)
+3. Copy GeoJSON files from: ~/Desktop/School_Accessibility_Data/shapefiles/
+4. Create new workspace and stores in GeoServer
+5. Publish layers as WMS/WFS services
+        </pre>
+        
+        <h2>Data Files Location</h2>
+        <p><code>~/Desktop/School_Accessibility_Data/shapefiles/</code></p>
+        <ul>
+            <li>schools.geojson</li>
+            <li>sectors.geojson</li>
+            <li>roads.geojson</li>
+        </ul>
+        
+        <h2>WMS GetCapabilities</h2>
+        <pre>http://localhost:8080/geoserver/wms?service=WMS&version=1.3.0&request=GetCapabilities</pre>
+        
+        <h2>WFS GetCapabilities</h2>
+        <pre>http://localhost:8080/geoserver/wfs?service=WFS&version=1.1.0&request=GetCapabilities</pre>
+    </div>
+</body>
+</html>

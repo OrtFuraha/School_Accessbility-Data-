@@ -1,0 +1,405 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          37.47471951034056,
+          87.84392202952121
+        ]
+      },
+      "properties": {
+        "village": "Village 1",
+        "distance_km": "1505.63",
+        "priority_score": "1.00",
+        "population": 1367
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          87.48540594933245,
+          84.637423304436
+        ]
+      },
+      "properties": {
+        "village": "Village 2",
+        "distance_km": "1664.44",
+        "priority_score": "1.00",
+        "population": 312
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          69.44294277871177,
+          86.10488030473502
+        ]
+      },
+      "properties": {
+        "village": "Village 3",
+        "distance_km": "1790.81",
+        "priority_score": "1.00",
+        "population": 1036
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          53.34871668099879,
+          55.134461538029015
+        ]
+      },
+      "properties": {
+        "village": "Village 4",
+        "distance_km": "613.97",
+        "priority_score": "1.00",
+        "population": 1234
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          75.10130216687412,
+          11.8511780980071
+        ]
+      },
+      "properties": {
+        "village": "Village 5",
+        "distance_km": "1769.84",
+        "priority_score": "1.00",
+        "population": 180
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          14.27754461854013,
+          17.341163675981726
+        ]
+      },
+      "properties": {
+        "village": "Village 6",
+        "distance_km": "1520.50",
+        "priority_score": "1.00",
+        "population": 1135
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          32.161873956468895,
+          22.29714995177087
+        ]
+      },
+      "properties": {
+        "village": "Village 7",
+        "distance_km": "883.21",
+        "priority_score": "1.00",
+        "population": 1597
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          17.717261392794317,
+          35.962656596706566
+        ]
+      },
+      "properties": {
+        "village": "Village 8",
+        "distance_km": "1322.12",
+        "priority_score": "1.00",
+        "population": 664
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          41.796640293223334,
+          33.13485259849781
+        ]
+      },
+      "properties": {
+        "village": "Village 9",
+        "distance_km": "1169.92",
+        "priority_score": "1.00",
+        "population": 116
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          56.594734161425734,
+          42.65218792646094
+        ]
+      },
+      "properties": {
+        "village": "Village 10",
+        "distance_km": "960.37",
+        "priority_score": "1.00",
+        "population": 477
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          86.59545390250526,
+          65.10999767417367
+        ]
+      },
+      "properties": {
+        "village": "Village 11",
+        "distance_km": "885.16",
+        "priority_score": "1.00",
+        "population": 1830
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          19.182782561186436,
+          49.42568190668187
+        ]
+      },
+      "properties": {
+        "village": "Village 12",
+        "distance_km": "1315.49",
+        "priority_score": "1.00",
+        "population": 1391
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          55.27089022261853,
+          77.74146481244189
+        ]
+      },
+      "properties": {
+        "village": "Village 13",
+        "distance_km": "967.15",
+        "priority_score": "1.00",
+        "population": 449
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          12.75046526063436,
+          12.651288200528086
+        ]
+      },
+      "properties": {
+        "village": "Village 14",
+        "distance_km": "2031.54",
+        "priority_score": "1.00",
+        "population": 1253
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.095976434377466,
+          84.2417477874576
+        ]
+      },
+      "properties": {
+        "village": "Village 15",
+        "distance_km": "1630.85",
+        "priority_score": "1.00",
+        "population": 1441
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          49.590834490201345,
+          22.80099510387732
+        ]
+      },
+      "properties": {
+        "village": "Village 16",
+        "distance_km": "1536.33",
+        "priority_score": "1.00",
+        "population": 1629
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          60.43243301426951,
+          53.80575405505448
+        ]
+      },
+      "properties": {
+        "village": "Village 17",
+        "distance_km": "830.29",
+        "priority_score": "1.00",
+        "population": 1765
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          75.78992034723075,
+          16.305983857166808
+        ]
+      },
+      "properties": {
+        "village": "Village 18",
+        "distance_km": "1632.91",
+        "priority_score": "1.00",
+        "population": 1871
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          53.44822817511407,
+          53.739506893031894
+        ]
+      },
+      "properties": {
+        "village": "Village 19",
+        "distance_km": "478.35",
+        "priority_score": "1.00",
+        "population": 1430
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.169859586654209,
+          60.70650674586631
+        ]
+      },
+      "properties": {
+        "village": "Village 20",
+        "distance_km": "1303.17",
+        "priority_score": "1.00",
+        "population": 411
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          76.39038024759671,
+          61.01134028481292
+        ]
+      },
+      "properties": {
+        "village": "Village 21",
+        "distance_km": "1040.65",
+        "priority_score": "1.00",
+        "population": 597
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          36.420203114742336,
+          10.193868574514902
+        ]
+      },
+      "properties": {
+        "village": "Village 22",
+        "distance_km": "1623.02",
+        "priority_score": "1.00",
+        "population": 466
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          17.061078685121007,
+          81.3654471084073
+        ]
+      },
+      "properties": {
+        "village": "Village 23",
+        "distance_km": "1305.26",
+        "priority_score": "1.00",
+        "population": 760
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          84.96113191392965,
+          76.8137989837105
+        ]
+      },
+      "properties": {
+        "village": "Village 24",
+        "distance_km": "888.46",
+        "priority_score": "1.00",
+        "population": 602
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          88.7568707208559,
+          74.12220364082417
+        ]
+      },
+      "properties": {
+        "village": "Village 25",
+        "distance_km": "783.71",
+        "priority_score": "1.00",
+        "population": 1107
+      }
+    }
+  ]
+}

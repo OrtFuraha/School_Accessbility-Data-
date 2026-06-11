@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessibility Map - Musanze District</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .header h1 { font-size: 20px; margin: 0; }
+        .header a { color: white; text-decoration: none; margin-left: 15px; padding: 5px 10px; border-radius: 5px; }
+        .header a:hover { background: rgba(255,255,255,0.2); }
+        .map-container { height: calc(100vh - 140px); width: 100%; }
+        .legend { position: absolute; bottom: 20px; right: 20px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1000; font-size: 12px; min-width: 160px; }
+        .legend-color { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin-right: 5px; }
+        .info-panel { position: absolute; top: 80px; left: 20px; background: white; padding: 10px 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1000; font-size: 12px; max-width: 280px; max-height: 350px; overflow-y: auto; }
+        .stats { background: #f8fafc; padding: 8px 12px; border-radius: 6px; margin-top: 5px; }
+        .gps-btn { background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 10px; width: 100%; }
+        .gps-btn:hover { background: #059669; }
+        .route-info { background: #fef3c7; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 11px; }
+        .blue-dot { background: #3b82f6; width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 2px solid white; }
+        .red-dot { background: #ef4444; width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 2px solid white; }
+        .orange-line { background: #f97316; width: 30px; height: 3px; display: inline-block; }
+        .analysis-controls { position: absolute; top: 80px; right: 20px; background: white; padding: 10px 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1000; }
+        .btn-analysis { background: #1a56db; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; width: 100%; margin-top: 5px; }
+        .btn-analysis:hover { background: #1e40af; }
+        .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        @media (max-width: 768px) {
+            .header { flex-direction: column; gap: 10px; }
+            .info-panel { top: 100px; left: 10px; right: 10px; max-width: none; }
+            .analysis-controls { top: 100px; right: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fas fa-map"></i> Musanze District - Proposed Roads</h1>
+        <div>
+            <a href="/"><i class="fas fa-home"></i> Home</a>
+            <a href="/accessibility-map" style="background: rgba(255,255,255,0.2);"><i class="fas fa-map"></i> Accessibility</a>
+            <a href="/underserved-map"><i class="fas fa-exclamation-triangle"></i> Underserved</a>
+            <a href="/priority-map"><i class="fas fa-flag"></i> Priority</a>
+            <a href="/proposed-roads-map"><i class="fas fa-road"></i> Proposed Roads</a>
+        </div>
+    </div>
+    <div id="map" class="map-container"></div>
+    
+    <div class="analysis-controls">
+        <strong><i class="fas fa-location-dot"></i> GPS Live Location</strong>
+        <button class="gps-btn" onclick="getLiveLocation()"><i class="fas fa-satellite-dish"></i> Use My Live Location</button>
+        <hr class="my-2">
+        <strong><i class="fas fa-chart-line"></i> Analysis</strong>
+        <button class="btn-analysis" onclick="runNewAnalysis()"><i class="fas fa-play"></i> Run New Analysis</button>
+        <button class="btn-analysis" onclick="refreshData()"><i class="fas fa-sync-alt"></i> Refresh Data</button>
+    </div>
+    
+    <div class="info-panel">
+        <strong><i class="fas fa-info-circle"></i> Accessibility Status</strong>
+        <div class="stats" id="stats">
+            <i class="fas fa-spinner fa-spin"></i> Loading statistics...
+        </div>
+        <div id="routePanel" style="display:none;" class="route-info mt-2">
+            <strong><i class="fas fa-route"></i> Route to School</strong>
+            <div id="routeDetails"></div>
+        </div>
+        <div id="analysisDate" class="small text-muted mt-2"></div>
+    </div>
+    
+    <div class="legend">
+        <strong>Legend:</strong><br>
+        <span><span class="legend-color" style="background: #10b981;"></span> Highly Accessible</span><br>
+        <span><span class="legend-color" style="background: #f59e0b;"></span> Moderately Accessible</span><br>
+        <span><span class="legend-color" style="background: #f97316;"></span> Poorly Accessible</span><br>
+        <span><span class="legend-color" style="background: #ef4444;"></span> Severely Underserved</span><br>
+        <span><span class="legend-color" style="background: #8b5cf6;"></span> Schools</span><br>
+        <hr class="my-1">
+        <span><span class="blue-dot"></span> Your Location</span><br>
+        <span><span class="red-dot"></span> Destination School</span><br>
+        <span><span class="orange-line"></span> Route Path (Orange)</span>
+    </div>
+
+    <script>
+        let map;
+        let currentRouteLayer = null;
+        let currentLocationMarker = null;
+        let currentSchoolMarker = null;
+        
+        async function getLiveLocation() {
+            if (navigator.geolocation) {
+                document.getElementById('stats').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting your location...';
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        await findRouteToNearestSchool(lat, lon);
+                    },
+                    (error) => {
+                        alert('Error getting location: ' + error.message);
+                        document.getElementById('stats').innerHTML = 'Error getting location';
+                    }
+                );
+            } else {
+                alert('Geolocation not supported by your browser');
+            }
+        }
+        
+        async function findRouteToNearestSchool(lat, lon) {
+            document.getElementById('stats').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Finding nearest school and calculating route...';
+            
+            const response = await fetch('/api/gps-route', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: lat, lon: lon })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear previous route layers
+                if (currentRouteLayer) map.removeLayer(currentRouteLayer);
+                if (currentLocationMarker) map.removeLayer(currentLocationMarker);
+                if (currentSchoolMarker) map.removeLayer(currentSchoolMarker);
+                
+                // Add blue dot for user location
+                const blueIcon = L.divIcon({
+                    html: '<div style="background: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(59,130,246,0.5);"></div>',
+                    iconSize: [20, 20],
+                    className: 'blue-dot-marker'
+                });
+                currentLocationMarker = L.marker([lat, lon], { icon: blueIcon }).addTo(map);
+                currentLocationMarker.bindPopup('<b>Your Live Location</b>').openPopup();
+                
+                // Add red dot for destination school
+                const redIcon = L.divIcon({
+                    html: '<div style="background: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></div>',
+                    iconSize: [20, 20],
+                    className: 'red-dot-marker'
+                });
+                currentSchoolMarker = L.marker([data.nearest_school.lat, data.nearest_school.lon], { icon: redIcon }).addTo(map);
+                currentSchoolMarker.bindPopup(`<b>${data.nearest_school.name}</b><br>Nearest School`).openPopup();
+                
+                // Draw orange route line
+                if (data.route.route_points && data.route.route_points.length > 0) {
+                    const routePoints = data.route.route_points.map(p => [p[1], p[0]]);
+                    currentRouteLayer = L.polyline(routePoints, { 
+                        color: '#f97316', 
+                        weight: 5, 
+                        opacity: 0.9,
+                        smoothFactor: 1
+                    }).addTo(map);
+                    map.fitBounds(currentRouteLayer.getBounds());
+                }
+                
+                // Display route information
+                document.getElementById('routePanel').style.display = 'block';
+                document.getElementById('routeDetails').innerHTML = `
+                    <strong>🏫 Nearest School:</strong> ${data.nearest_school.name}<br>
+                    <strong>📍 Distance:</strong> ${data.route.distance_km} km (Real road distance)<br>
+                    <strong>⏱️ Travel Time:</strong> ${data.route.travel_time_min} minutes<br>
+                    <strong>📊 Accessibility Level:</strong> <span class="badge bg-primary">${data.route.accessibility_level}</span><br>
+                    <strong>🛣️ Routing Method:</strong> OSRM - Open Source Routing Machine
+                `;
+                
+                document.getElementById('stats').innerHTML = `
+                    Route calculated successfully!<br>
+                    Distance: ${data.route.distance_km} km<br>
+                    Travel Time: ${data.route.travel_time_min} min
+                `;
+            } else {
+                alert('Error: ' + data.error);
+                document.getElementById('stats').innerHTML = 'Error finding route';
+            }
+        }
+        
+        async function runNewAnalysis() {
+            showLoading();
+            const response = await fetch('/api/analyze', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                await loadData();
+                document.getElementById('analysisDate').innerHTML = `<i class="fas fa-calendar"></i> Last analysis: ${new Date().toLocaleString()}`;
+            }
+            hideLoading();
+        }
+        
+        async function refreshData() {
+            showLoading();
+            await loadData();
+            hideLoading();
+        }
+        
+        function showLoading() {
+            let loader = document.getElementById('loader');
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.id = 'loader';
+                loader.className = 'loading';
+                loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading data...';
+                document.body.appendChild(loader);
+            } else {
+                loader.style.display = 'block';
+            }
+        }
+        
+        function hideLoading() {
+            const loader = document.getElementById('loader');
+            if (loader) loader.style.display = 'none';
+        }
+        
+        function initMap() {
+            map = L.map('map').setView([-1.495, 29.635], 11);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap | Musanze District, Rwanda'
+            }).addTo(map);
+            loadData();
+        }
+        
+        async function loadData() {
+            showLoading();
+            try {
+                map.eachLayer(layer => {
+                    if (layer instanceof L.Marker || layer instanceof L.CircleMarker || layer instanceof L.Polyline) {
+                        if (layer !== currentLocationMarker && layer !== currentSchoolMarker && layer !== currentRouteLayer) {
+                            map.removeLayer(layer);
+                        }
+                    }
+                });
+                
+                const sectorsRes = await fetch('/api/geojson/musanze_sectors');
+                const sectorsData = await sectorsRes.json();
+                
+                let stats = { total: 0, highly: 0, moderate: 0, poor: 0, severe: 0 };
+                
+                if (sectorsData.features && sectorsData.features.length > 0) {
+                    sectorsData.features.forEach(feature => {
+                        let color = '#10b981';
+                        const category = feature.properties.category;
+                        if (category === 'Severely Underserved') { color = '#ef4444'; stats.severe++; }
+                        else if (category === 'Poorly Accessible') { color = '#f97316'; stats.poor++; }
+                        else if (category === 'Moderately Accessible') { color = '#f59e0b'; stats.moderate++; }
+                        else if (category === 'Highly Accessible') { color = '#10b981'; stats.highly++; }
+                        stats.total++;
+                        
+                        L.circleMarker([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], {
+                            radius: 10,
+                            fillColor: color,
+                            color: '#fff',
+                            weight: 2,
+                            fillOpacity: 0.8
+                        }).bindPopup(`
+                            <b>${feature.properties.sector}</b><br>
+                            Category: ${feature.properties.category}<br>
+                            Distance: ${feature.properties.distance_km} km<br>
+                            Travel Time: ${feature.properties.travel_time} min<br>
+                            Population: ${feature.properties.population.toLocaleString()}<br>
+                            Nearest School: ${feature.properties.nearest_school}
+                        `).addTo(map);
+                    });
+                }
+                
+                const schoolsRes = await fetch('/api/geojson/musanze_schools');
+                const schoolsData = await schoolsRes.json();
+                if (schoolsData.features && schoolsData.features.length > 0) {
+                    schoolsData.features.forEach(school => {
+                        const schoolIcon = L.divIcon({
+                            html: '<i class="fas fa-school" style="font-size: 20px; color: #8b5cf6;"></i>',
+                            iconSize: [20, 20],
+                            className: 'school-icon'
+                        });
+                        L.marker([school.geometry.coordinates[1], school.geometry.coordinates[0]], { icon: schoolIcon })
+                            .bindPopup(`<b>${school.properties.name}</b><br>Capacity: ${school.properties.capacity} students`).addTo(map);
+                    });
+                }
+                
+                document.getElementById('stats').innerHTML = `
+                    <strong>Total Sectors:</strong> ${stats.total}<br>
+                    🟢 Highly Accessible: ${stats.highly}<br>
+                    🟡 Moderately Accessible: ${stats.moderate}<br>
+                    🟠 Poorly Accessible: ${stats.poor}<br>
+                    🔴 Severely Underserved: ${stats.severe}<br>
+                    <hr class="my-1">
+                    <i class="fas fa-chart-line"></i> Accessibility Rate: ${((stats.highly + stats.moderate) / stats.total * 100).toFixed(1)}%
+                `;
+                
+                document.getElementById('analysisDate').innerHTML = `<i class="fas fa-calendar"></i> Data loaded: ${new Date().toLocaleString()}`;
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('stats').innerHTML = 'Error loading data. Please load data first.';
+            }
+            hideLoading();
+        }
+        
+        setInterval(refreshData, 30000);
+        initMap();
+    </script>
+</body>
+</html>

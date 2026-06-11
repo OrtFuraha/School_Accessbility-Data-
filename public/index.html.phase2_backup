@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Rwanda School Accessibility System — Musanze District</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1923;--bg2:#1a2535;--bg3:#243044;--card:#1e2d3d;
+  --border:#2d4060;--accent:#00d4ff;--accent2:#00ff88;
+  --warn:#ffaa00;--danger:#ff4444;--text:#e8f0fe;--muted:#7a8fa6;
+  --highly:#00c853;--moderate:#ff9800;--underserved:#f44336;
+}
+html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);overflow:hidden}
+
+/* ── Layout ── */
+#app{display:grid;grid-template-rows:56px 1fr;grid-template-columns:320px 1fr;
+  height:100vh;gap:0}
+#header{grid-column:1/-1;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;padding:0 20px;
+  box-shadow:0 2px 12px rgba(0,0,0,0.4)}
+#sidebar{background:var(--bg2);border-right:1px solid var(--border);
+  overflow-y:auto;display:flex;flex-direction:column;gap:0}
+#map-container{position:relative;background:#0a1520}
+#map{width:100%;height:100%}
+
+/* ── Header ── */
+.header-brand{display:flex;align-items:center;gap:12px}
+.header-brand .logo{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.header-brand h1{font-size:16px;font-weight:600;color:var(--text)}
+.header-brand p{font-size:11px;color:var(--muted)}
+.header-status{display:flex;align-items:center;gap:16px}
+.status-badge{display:flex;align-items:center;gap:6px;font-size:12px;
+  background:var(--bg3);padding:5px 12px;border-radius:20px;border:1px solid var(--border)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);
+  animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.3)}}
+
+/* ── Sidebar sections ── */
+.section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;
+  color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+
+/* ── Stats grid ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;cursor:pointer;transition:all .2s}
+.stat-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.stat-card.active{border-color:var(--accent);background:rgba(0,212,255,.08)}
+.stat-val{font-size:22px;font-weight:700;color:var(--accent);line-height:1}
+.stat-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+.stat-card.green .stat-val{color:var(--accent2)}
+.stat-card.orange .stat-val{color:var(--warn)}
+.stat-card.red .stat-val{color:var(--danger)}
+
+/* ── Accessibility bars ── */
+.acc-bar-wrap{margin-bottom:8px}
+.acc-bar-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px}
+.acc-bar-label span:first-child{color:var(--text)}
+.acc-bar-label span:last-child{color:var(--muted)}
+.acc-bar-bg{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.acc-bar-fill{height:100%;border-radius:3px;transition:width .8s ease}
+
+/* ── Layer controls ── */
+.layer-item{display:flex;align-items:center;justify-content:space-between;
+  padding:7px 0;border-bottom:1px solid rgba(45,64,96,.4)}
+.layer-item:last-child{border-bottom:none}
+.layer-left{display:flex;align-items:center;gap:8px;font-size:12px}
+.layer-dot{width:10px;height:10px;border-radius:50%}
+.toggle-switch{position:relative;width:34px;height:18px;cursor:pointer}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--bg3);border-radius:9px;
+  border:1px solid var(--border);transition:.3s}
+.toggle-slider:before{content:'';position:absolute;width:12px;height:12px;
+  left:2px;top:2px;background:var(--muted);border-radius:50%;transition:.3s}
+.toggle-switch input:checked + .toggle-slider{background:var(--accent);border-color:var(--accent)}
+.toggle-switch input:checked + .toggle-slider:before{transform:translateX(16px);background:#fff}
+
+/* ── Results table ── */
+.results-table{width:100%;border-collapse:collapse;font-size:11px}
+.results-table th{padding:6px 8px;text-align:left;color:var(--muted);
+  font-weight:600;letter-spacing:.5px;border-bottom:1px solid var(--border);
+  text-transform:uppercase;font-size:9px}
+.results-table td{padding:7px 8px;border-bottom:1px solid rgba(45,64,96,.3);vertical-align:middle}
+.results-table tr:hover td{background:var(--bg3)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:.5px}
+.badge-high{background:rgba(0,200,83,.15);color:#00c853;border:1px solid rgba(0,200,83,.3)}
+.badge-mod{background:rgba(255,152,0,.15);color:#ff9800;border:1px solid rgba(255,152,0,.3)}
+.badge-low{background:rgba(244,67,54,.15);color:#f44336;border:1px solid rgba(244,67,54,.3)}
+
+/* ── Map overlays ── */
+#map-overlay{position:absolute;top:12px;right:12px;z-index:1000;
+  display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.map-pill{background:rgba(15,25,35,.88);border:1px solid var(--border);
+  border-radius:8px;padding:8px 12px;font-size:11px;pointer-events:all;
+  backdrop-filter:blur(8px)}
+.map-pill .pill-title{color:var(--muted);font-size:9px;text-transform:uppercase;
+  letter-spacing:1px;margin-bottom:5px}
+
+/* ── Legend ── */
+.legend-item{display:flex;align-items:center;gap:7px;margin-bottom:4px;font-size:11px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+
+/* ── Loading ── */
+#loading{position:absolute;inset:0;background:rgba(10,21,32,.9);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+  flex-direction:column;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading.hidden{display:none}
+
+/* ── Popup ── */
+.custom-popup .leaflet-popup-content-wrapper{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.custom-popup .leaflet-popup-tip{background:var(--card)}
+.popup-title{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--accent)}
+.popup-row{display:flex;justify-content:space-between;font-size:11px;
+  padding:3px 0;border-bottom:1px solid rgba(45,64,96,.3)}
+.popup-row:last-child{border:none}
+.popup-row span:last-child{color:var(--accent2);font-weight:600}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ── Analyse button ── */
+.btn-analyze{width:100%;padding:10px;background:linear-gradient(135deg,#0066cc,var(--accent));
+  border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;
+  cursor:pointer;letter-spacing:.5px;transition:opacity .2s}
+.btn-analyze:hover{opacity:.85}
+.btn-analyze:disabled{opacity:.4;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div id="loading">
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:13px">Loading GIS data…</div>
+</div>
+
+<div id="app">
+
+  <!-- ── HEADER ── -->
+  <header id="header">
+    <div class="header-brand">
+      <div class="logo">🗺️</div>
+      <div>
+        <h1>Rwanda School Accessibility System</h1>
+        <p>Musanze District · Northern Province · Road Network Analysis</p>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span id="status-text">Connecting…</span>
+      </div>
+      <div class="status-badge" id="coord-display" style="font-family:monospace;font-size:11px">
+        Hover map for coords
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR ── -->
+  <aside id="sidebar">
+
+    <!-- Stats -->
+    <div class="section">
+      <div class="section-title">📊 Summary Statistics</div>
+      <div class="stats-grid">
+        <div class="stat-card" onclick="zoomToLayer('schools')">
+          <div class="stat-val" id="st-schools">—</div>
+          <div class="stat-lbl">🏫 Schools</div>
+        </div>
+        <div class="stat-card" onclick="zoomToLayer('roads')">
+          <div class="stat-val" id="st-roads">—</div>
+          <div class="stat-lbl">🛣️ Roads</div>
+        </div>
+        <div class="stat-card" onclick="zoomToLayer('sectors')">
+          <div class="stat-val" id="st-sectors">—</div>
+          <div class="stat-lbl">🏘️ Sectors</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="st-roadkm">—</div>
+          <div class="stat-lbl">📏 Road km</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-val" id="st-high">—</div>
+          <div class="stat-lbl">🟢 Highly Acc.</div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-val" id="st-mod">—</div>
+          <div class="stat-lbl">🟡 Moderate</div>
+        </div>
+        <div class="stat-card red" style="grid-column:1/-1">
+          <div class="stat-val" id="st-under">—</div>
+          <div class="stat-lbl">🔴 Underserved Areas</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accessibility breakdown -->
+    <div class="section">
+      <div class="section-title">📈 Accessibility Breakdown</div>
+      <div id="acc-bars"></div>
+    </div>
+
+    <!-- Layer controls -->
+    <div class="section">
+      <div class="section-title">🗂️ Map Layers</div>
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background:#00c853"></div>
+          <span>Schools (39)</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleLayer('schools',this.checked)"/>
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background:#ffaa00"></div>
+          <span>Road Network</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleLayer('roads',this.checked)"/>
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background:#00d4ff"></div>
+          <span>Sectors</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleLayer('sectors',this.checked)"/>
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background:#7c4dff"></div>
+          <span>Districts</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" onchange="toggleLayer('districts',this.checked)"/>
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background:#ff4444"></div>
+          <span>Accessibility Heat</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" checked onchange="toggleLayer('accessibility',this.checked)"/>
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Run analysis button -->
+    <div class="section">
+      <button class="btn-analyze" id="btn-analyze" onclick="runAnalysis()">
+        🔍 Re-run Accessibility Analysis
+      </button>
+    </div>
+
+    <!-- Results table -->
+    <div class="section" style="flex:1">
+      <div class="section-title">📋 Sector Results</div>
+      <div style="overflow-x:auto">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Sector</th>
+              <th>Nearest School</th>
+              <th>Dist km</th>
+              <th>Status</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">
+              Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAP ── -->
+  <main id="map-container">
+    <div id="map"></div>
+
+    <div id="map-overlay">
+      <!-- Legend -->
+      <div class="map-pill">
+        <div class="pill-title">Accessibility Legend</div>
+        <div class="legend-item">
+          <div class="legend-swatch" style="background:#00c853"></div>
+          <span>Highly Accessible (≥65)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch" style="background:#ff9800"></div>
+          <span>Moderately Accessible (35–64)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch" style="background:#f44336"></div>
+          <span>Underserved (&lt;35)</span>
+        </div>
+        <div class="legend-item" style="margin-top:6px">
+          <div class="legend-swatch" style="background:#00c853;border-radius:50%"></div>
+          <span>School location</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch" style="background:#ffaa00;height:3px;margin-top:4px;border-radius:1px"></div>
+          <span>Road network</span>
+        </div>
+      </div>
+
+      <!-- Live info panel -->
+      <div class="map-pill" id="info-panel" style="min-width:180px">
+        <div class="pill-title">Selected Feature</div>
+        <div id="info-content" style="color:var(--muted);font-size:11px">
+          Click a feature on the map
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div><!-- #app -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────────
+const API   = '';
+const state = { stats:{}, accessibility:[], layers:{} };
+
+// ── Map init ─────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [-1.54, 29.72], zoom: 12,
+  zoomControl: false, attributionControl: true,
+});
+L.control.zoom({ position:'bottomright' }).addTo(map);
+
+// Base layers
+const baseLayers = {
+  'Dark':    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+              { attribution:'© CartoDB', maxZoom:19 }),
+  'Streets': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              { attribution:'© OSM', maxZoom:19 }),
+  'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+              { attribution:'© Esri', maxZoom:19 }),
+};
+baseLayers['Dark'].addTo(map);
+L.control.layers(baseLayers, {}, { position:'bottomleft' }).addTo(map);
+
+// Coordinate display
+map.on('mousemove', e => {
+  document.getElementById('coord-display').textContent =
+    `${e.latlng.lat.toFixed(5)}°, ${e.latlng.lng.toFixed(5)}°`;
+});
+
+// ── Layer groups ─────────────────────────────────────────────────────
+const layers = {
+  schools:       L.markerClusterGroup({ maxClusterRadius:40 }),
+  roads:         L.layerGroup(),
+  sectors:       L.layerGroup(),
+  districts:     L.layerGroup(),
+  accessibility: L.layerGroup(),
+};
+Object.values(layers).forEach(l => map.addLayer(l));
+// districts off by default
+map.removeLayer(layers.districts);
+
+function toggleLayer(name, on) {
+  on ? map.addLayer(layers[name]) : map.removeLayer(layers[name]);
+}
+function zoomToLayer(name) {
+  try {
+    const l = layers[name];
+    if (l.getBounds) {
+      const b = l.getBounds();
+      if (b.isValid()) map.fitBounds(b, { padding:[30,30] });
+    }
+  } catch {}
+}
+
+// ── Colour helpers ───────────────────────────────────────────────────
+function accessColor(score) {
+  if (score >= 65) return '#00c853';
+  if (score >= 35) return '#ff9800';
+  return '#f44336';
+}
+function roadColor(type) {
+  const t = (type||'').toLowerCase();
+  if (t.includes('primary') || t.includes('main'))    return '#ffaa00';
+  if (t.includes('secondary'))                        return '#ff7700';
+  if (t.includes('tertiary') || t.includes('rural'))  return '#cc5500';
+  return '#8a6a30';
+}
+
+// ── School marker ────────────────────────────────────────────────────
+function schoolIcon(name) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:22px;height:22px;border-radius:50%;
+      background:#00c853;border:2px solid #fff;
+      display:flex;align-items:center;justify-content:center;
+      font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:pointer">🏫</div>`,
+    iconSize: [22,22], iconAnchor: [11,11],
+  });
+}
+
+// ── Popup builder ────────────────────────────────────────────────────
+function makePopup(title, rows) {
+  return `<div class="popup-title">${title}</div>` +
+    rows.map(([k,v]) =>
+      `<div class="popup-row"><span>${k}</span><span>${v??'—'}</span></div>`
+    ).join('');
+}
+
+// ── Load schools ─────────────────────────────────────────────────────
+async function loadSchools() {
+  const res  = await fetch(`${API}/api/gis/schools`);
+  const data = await res.json();
+  layers.schools.clearLayers();
+  (data.features||[]).forEach(f => {
+    if (!f.geometry) return;
+    const p   = f.properties;
+    const lat = f.geometry.coordinates[1];
+    const lon = f.geometry.coordinates[0];
+    const m   = L.marker([lat,lon], { icon: schoolIcon(p.name) });
+    m.bindPopup(makePopup(`🏫 ${p.name||'School'}`, [
+      ['Type',     p.type||'—'],
+      ['Capacity', p.capacity||'—'],
+      ['Lon',      lon.toFixed(5)],
+      ['Lat',      lat.toFixed(5)],
+    ]), { className:'custom-popup', maxWidth:220 });
+    m.on('click', () => setInfoPanel(`🏫 ${p.name}`, [
+      ['Type', p.type||'—'], ['Capacity', p.capacity||'—'],
+    ]));
+    layers.schools.addLayer(m);
+  });
+}
+
+// ── Load roads ───────────────────────────────────────────────────────
+async function loadRoads() {
+  const res  = await fetch(`${API}/api/gis/roads`);
+  const data = await res.json();
+  layers.roads.clearLayers();
+  (data.features||[]).forEach(f => {
+    if (!f.geometry) return;
+    const p   = f.properties;
+    const col = roadColor(p.type);
+    const lw  = (p.type||'').toLowerCase().includes('primary') ? 3 : 1.5;
+    const line = L.geoJSON(f, {
+      style: { color:col, weight:lw, opacity:.8, lineCap:'round', lineJoin:'round' },
+    });
+    line.bindPopup(makePopup(`🛣️ ${p.name||'Road'}`, [
+      ['Type',   p.type||'—'],
+      ['Surface',p.surface||'—'],
+      ['Length', p.length_m ? (p.length_m/1000).toFixed(2)+' km' : '—'],
+    ]), { className:'custom-popup' });
+    layers.roads.addLayer(line);
+  });
+}
+
+// ── Load districts ───────────────────────────────────────────────────
+async function loadDistricts() {
+  const res  = await fetch(`${API}/api/gis/districts`);
+  const data = await res.json();
+  layers.districts.clearLayers();
+  (data.features||[]).forEach(f => {
+    if (!f.geometry) return;
+    const p = f.properties;
+    const poly = L.geoJSON(f, {
+      style:{ color:'#7c4dff', weight:2, opacity:.7,
+              fillColor:'#7c4dff', fillOpacity:.05, dashArray:'6 4' },
+    });
+    poly.bindPopup(makePopup(`🏛️ ${p.name||'District'}`, [
+      ['Area', p.area_sqkm ? p.area_sqkm.toFixed(1)+' km²' : '—'],
+    ]), { className:'custom-popup' });
+    layers.districts.addLayer(poly);
+  });
+}
+
+// ── Load sectors + accessibility ─────────────────────────────────────
+async function loadAccessibility() {
+  const [secRes, accRes] = await Promise.all([
+    fetch(`${API}/api/gis/sectors`),
+    fetch(`${API}/api/gis/accessibility`),
+  ]);
+  const secData = await secRes.json();
+  const accData = await accRes.json();
+
+  // Build lookup by sector_id
+  const accMap = {};
+  (accData.features||[]).forEach(f => {
+    if (f.properties) accMap[f.properties.sector_id] = f.properties;
+  });
+  state.accessibility = (accData.features||[]).map(f => f.properties).filter(Boolean);
+
+  layers.sectors.clearLayers();
+  layers.accessibility.clearLayers();
+
+  (secData.features||[]).forEach(f => {
+    if (!f.geometry) return;
+    const p   = f.properties;
+    const acc = accMap[p.id] || {};
+    const score = acc.accessibility_score ?? 50;
+    const col   = accessColor(score);
+    const cls   = acc.accessibility_class || 'Unknown';
+
+    // Sector polygon
+    const poly = L.geoJSON(f, {
+      style:{ color:col, weight:2, opacity:.9,
+              fillColor:col, fillOpacity:.12, dashArray:'4 3' },
+    });
+    poly.on('click', () => setInfoPanel(`📍 ${p.name||'Sector'}`, [
+      ['Score',      score.toFixed(1)],
+      ['Class',      cls],
+      ['Nearest',    acc.nearest_school_name||'—'],
+      ['Distance',   acc.distance_km ? acc.distance_km.toFixed(2)+' km' : '—'],
+      ['Travel',     acc.travel_time_minutes ? acc.travel_time_minutes.toFixed(1)+' min' : '—'],
+      ['Roads',      acc.road_count||0],
+      ['Road km',    acc.total_road_km ? acc.total_road_km.toFixed(1) : '—'],
+    ]));
+    poly.bindPopup(makePopup(`📍 ${p.name||'Sector'}`, [
+      ['Score',    score.toFixed(1)],
+      ['Class',    cls],
+      ['Nearest',  acc.nearest_school_name||'—'],
+      ['Distance', acc.distance_km ? acc.distance_km.toFixed(2)+' km' : '—'],
+      ['Travel',   acc.travel_time_minutes ? acc.travel_time_minutes.toFixed(1)+' min' : '—'],
+    ]), { className:'custom-popup' });
+    layers.sectors.addLayer(poly);
+
+    // Accessibility fill (separate layer, toggleable)
+    const fill = L.geoJSON(f, {
+      style:{ color:'transparent', weight:0,
+              fillColor:col, fillOpacity:.28 },
+    });
+    fill.bindTooltip(`${p.name||'Sector'}: ${cls} (${score.toFixed(0)})`,
+      { className:'', direction:'center', permanent:false });
+    layers.accessibility.addLayer(fill);
+  });
+
+  updateResultsTable(state.accessibility);
+  updateAccBars(accData.metadata || {});
+}
+
+// ── Info panel ───────────────────────────────────────────────────────
+function setInfoPanel(title, rows) {
+  document.getElementById('info-content').innerHTML =
+    `<strong style="color:var(--accent);display:block;margin-bottom:6px">${title}</strong>` +
+    rows.map(([k,v]) =>
+      `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--muted)">${k}</span>
+        <span style="color:var(--accent2);font-weight:600">${v??'—'}</span>
+       </div>`
+    ).join('');
+}
+
+// ── Accessibility bars ────────────────────────────────────────────────
+function updateAccBars(meta) {
+  const total = meta.total || state.accessibility.length || 1;
+  const highly = meta.highly||0, moderate = meta.moderate||0, under = meta.underserved||0;
+  const bars = [
+    { label:'Highly Accessible', val:highly, color:'#00c853' },
+    { label:'Moderately Accessible', val:moderate, color:'#ff9800' },
+    { label:'Underserved', val:under, color:'#f44336' },
+  ];
+  document.getElementById('acc-bars').innerHTML = bars.map(b => `
+    <div class="acc-bar-wrap">
+      <div class="acc-bar-label">
+        <span>${b.label}</span>
+        <span>${b.val} / ${total}</span>
+      </div>
+      <div class="acc-bar-bg">
+        <div class="acc-bar-fill" style="width:${total>0?(b.val/total*100):0}%;background:${b.color}"></div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Results table ─────────────────────────────────────────────────────
+function updateResultsTable(rows) {
+  const tbody = document.getElementById('results-body');
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">No results</td></tr>';
+    return;
+  }
+  const sorted = [...rows].sort((a,b) => (a.accessibility_score||0) - (b.accessibility_score||0));
+  tbody.innerHTML = sorted.map(r => {
+    const cls   = r.accessibility_class || '';
+    const badge = cls === 'Highly Accessible'     ? '<span class="badge badge-high">HIGH</span>'
+                : cls === 'Moderately Accessible'  ? '<span class="badge badge-mod">MOD</span>'
+                : '<span class="badge badge-low">LOW</span>';
+    return `<tr onclick="focusSector(${r.centroid_lon},${r.centroid_lat})" style="cursor:pointer">
+      <td>${r.sector_name||'—'}</td>
+      <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          title="${r.nearest_school_name||''}">${r.nearest_school_name||'—'}</td>
+      <td>${r.distance_km!=null ? r.distance_km.toFixed(2) : '—'}</td>
+      <td>${badge}</td>
+      <td style="color:${accessColor(r.accessibility_score||0)};font-weight:700">
+        ${r.accessibility_score!=null ? r.accessibility_score.toFixed(1) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Focus on sector ───────────────────────────────────────────────────
+function focusSector(lon, lat) {
+  if (lon && lat) map.setView([lat, lon], 13);
+}
+
+// ── Load stats ────────────────────────────────────────────────────────
+async function loadStats() {
+  const res  = await fetch(`${API}/api/gis/stats`);
+  const data = await res.json();
+  state.stats = data;
+  document.getElementById('st-schools').textContent = data.schools   || 0;
+  document.getElementById('st-roads').textContent   = data.roads     || 0;
+  document.getElementById('st-sectors').textContent = data.sectors   || 0;
+  document.getElementById('st-roadkm').textContent  = data.roadLengthKm || 0;
+  document.getElementById('st-high').textContent    = data.accessibility?.highly      || 0;
+  document.getElementById('st-mod').textContent     = data.accessibility?.moderate    || 0;
+  document.getElementById('st-under').textContent   = data.accessibility?.underserved || 0;
+  document.getElementById('status-text').textContent =
+    `${data.schools} schools · ${data.roads} roads · Live`;
+}
+
+// ── Run analysis ──────────────────────────────────────────────────────
+async function runAnalysis() {
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true;
+  btn.textContent = '⏳ Analyzing…';
+  try {
+    await fetch(`${API}/api/gis/analyze`, { method:'POST' });
+    await Promise.all([loadStats(), loadAccessibility()]);
+    btn.textContent = '✅ Analysis Complete';
+    setTimeout(() => { btn.textContent = '🔍 Re-run Accessibility Analysis'; btn.disabled = false; }, 2000);
+  } catch (e) {
+    btn.textContent = '❌ Error — Retry';
+    btn.disabled = false;
+  }
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────
+async function init() {
+  try {
+    await Promise.all([
+      loadStats(),
+      loadSchools(),
+      loadRoads(),
+      loadDistricts(),
+      loadAccessibility(),
+    ]);
+    // Fit map to roads extent
+    try {
+      const b = layers.roads.getBounds ? layers.roads.getBounds() : null;
+      if (b && b.isValid()) map.fitBounds(b, { padding:[40,40] });
+    } catch {}
+    document.getElementById('loading').classList.add('hidden');
+  } catch (e) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#f44336;text-align:center">
+        ❌ Failed to load: ${e.message}<br>
+        <small style="color:var(--muted)">Is the server running on port 1111?</small>
+       </div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
+<script>
+// ── Patch: add proposed roads layer after page loads ─────────────────
+(function(){
+  const origInit = window.init;
+
+  // Add proposed roads layer
+  const proposedLayer = L.layerGroup();
+  map.addLayer(proposedLayer);
+
+  // Add toggle to sidebar
+  document.addEventListener('DOMContentLoaded', ()=>{});
+
+  async function loadProposedRoads(){
+    try{
+      const res  = await fetch('/api/gis/proposed-roads');
+      const data = await res.json();
+      proposedLayer.clearLayers();
+      (data.features||[]).forEach(f=>{
+        if(!f.geometry) return;
+        const p   = f.properties;
+        const col = p.priority===1 ? '#ff1744' : '#ff9100';
+        const line = L.geoJSON(f,{
+          style:{color:col,weight:p.priority===1?4:2.5,
+                 opacity:.9,dashArray:p.priority===1?null:'8 4'},
+        });
+        line.bindPopup(
+          `<div class="popup-title">🛣️ ${p.label||'Proposed Road'}</div>
+           <div class="popup-row"><span>Priority</span><span>${p.priority===1?'🔴 High':'🟡 Medium'}</span></div>
+           <div class="popup-row"><span>Length</span><span>${p.length_km} km</span></div>
+           <div class="popup-row"><span>Type</span><span>${p.type||'—'}</span></div>
+           <div class="popup-row"><span>Benefit Score</span><span>${p.benefit?.toFixed(0)||'—'}</span></div>`,
+          {className:'custom-popup'}
+        );
+        proposedLayer.addLayer(line);
+      });
+
+      // Update proposed roads count in sidebar
+      const cnt = (data.features||[]).length;
+      const existing = document.querySelector('.section-title');
+      if(cnt>0){
+        // Add entry to layer list
+        const layerSection = document.querySelectorAll('.section')[2];
+        if(layerSection && !document.getElementById('proposed-layer-item')){
+          const item = document.createElement('div');
+          item.id = 'proposed-layer-item';
+          item.className = 'layer-item';
+          item.innerHTML = `
+            <div class="layer-left">
+              <div class="layer-dot" style="background:#ff1744"></div>
+              <span>Proposed Roads (${cnt})</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" checked onchange="toggleProposed(this.checked)"/>
+              <div class="toggle-slider"></div>
+            </label>`;
+          layerSection.appendChild(item);
+        }
+      }
+    }catch(e){ console.warn('Proposed roads load failed:', e.message); }
+  }
+
+  window.toggleProposed = function(on){
+    on ? map.addLayer(proposedLayer) : map.removeLayer(proposedLayer);
+  };
+
+  // Extend init to also load proposed roads
+  const _origRunAnalysis = window.runAnalysis;
+  window.runAnalysis = async function(){
+    await _origRunAnalysis();
+    await loadProposedRoads();
+  };
+
+  // Auto-load on startup
+  setTimeout(loadProposedRoads, 2000);
+})();
+</script>

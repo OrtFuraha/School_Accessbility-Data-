@@ -1,0 +1,35 @@
+{
+  "name": "rwanda-school-accessibility-system",
+  "version": "1.0.0",
+  "description": "Rwanda School Accessibility Analysis System - WGS 84 / UTM zone 36S (EPSG:32736)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "@mapbox/polyline": "^1.2.1",
+    "@turf/turf": "^7.3.5",
+    "adm-zip": "^0.5.17",
+    "axios": "^1.17.0",
+    "csv-parse": "^5.5.0",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.21.0",
+    "proj4": "^2.20.8",
+    "shapefile": "^0.6.6",
+    "sqlite3": "^6.0.1"
+  },
+  "keywords": [
+    "rwanda",
+    "gis",
+    "accessibility",
+    "schools",
+    "utm",
+    "epsg:32736"
+  ],
+  "author": "",
+  "license": "MIT"
+}

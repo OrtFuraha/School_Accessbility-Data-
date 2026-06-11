@@ -1,32 +1,22 @@
 {
-  "name": "rwanda-school-accessibility-system",
-  "version": "1.0.0",
-  "description": "Rwanda School Accessibility Analysis System - WGS 84 / UTM zone 36S (EPSG:32736)",
+  "name": "rwanda-school-accessibility",
+  "version": "2.0.0",
+  "description": "Professional GIS Decision Support System for Rwanda School Accessibility",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@mapbox/polyline": "^1.2.1",
-    "@turf/turf": "^7.3.5",
-    "adm-zip": "^0.5.17",
-    "axios": "^1.17.0",
-    "csv-parse": "^5.5.0",
-    "express": "^4.18.2",
-    "multer": "^1.4.5-lts.1",
-    "proj4": "^2.9.0"
+    "@turf/turf": "^6.5.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.2",
+    "proj4": "^2.20.9",
+    "shapefile": "^0.6.6",
+    "sqlite3": "^5.1.7"
   },
-  "keywords": [
-    "rwanda",
-    "gis",
-    "accessibility",
-    "schools",
-    "utm",
-    "epsg:32736"
-  ],
-  "author": "",
-  "license": "MIT"
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
 }

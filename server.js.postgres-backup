@@ -1,0 +1,441 @@
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { parse } = require('csv-parse/sync');
+const { Pool } = require('pg');
+const axios = require('axios');
+
+const app = express();
+const PORT = process.env.PORT || 1111;
+
+const DESKTOP_PATH = path.join(os.homedir(), 'Desktop', 'School_Accessibility_Data');
+const OUTPUTS_PATH = path.join(DESKTOP_PATH, 'outputs');
+const DATA_PATH = path.join(os.homedir(), 'Desktop', 'DATA');
+
+[DESKTOP_PATH, OUTPUTS_PATH].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+console.log(`║     MUSANZE DISTRICT - SCHOOL ACCESSIBILITY SYSTEM          ║`);
+console.log(`║     PostgreSQL + PostGIS | Professional GIS Platform        ║`);
+console.log(`╚══════════════════════════════════════════════════════════════╝`);
+console.log(`\n📁 Data source: ${DATA_PATH}`);
+console.log(`🗄️ Database: PostgreSQL with PostGIS`);
+console.log(`📊 Outputs: ${OUTPUTS_PATH}`);
+
+// PostgreSQL connection pool
+const pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    database: 'school_accessibility_db',
+    user: process.env.USER || os.userInfo().username,
+    password: ''
+});
+
+// Test database connection
+pool.connect((err, client, release) => {
+    if (err) {
+        console.error('❌ PostgreSQL connection error:', err.message);
+        console.log('⚠️ Make sure PostgreSQL is installed and running:');
+        console.log('   brew services start postgresql');
+        process.exit(1);
+    } else {
+        console.log('✅ Connected to PostgreSQL');
+        release();
+    }
+});
+
+// Create tables with PostGIS geometry
+async function initDatabase() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS schools (
+                id SERIAL PRIMARY KEY,
+                school_id VARCHAR(50),
+                name VARCHAR(255),
+                lat DOUBLE PRECISION,
+                lon DOUBLE PRECISION,
+                geom GEOMETRY(Point, 4326),
+                capacity INTEGER,
+                sector VARCHAR(100),
+                district VARCHAR(100),
+                filename VARCHAR(255),
+                date_loaded TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS sectors (
+                id SERIAL PRIMARY KEY,
+                sector_id VARCHAR(50),
+                name VARCHAR(255),
+                lat DOUBLE PRECISION,
+                lon DOUBLE PRECISION,
+                geom GEOMETRY(Point, 4326),
+                population INTEGER,
+                households INTEGER,
+                district VARCHAR(100),
+                filename VARCHAR(255),
+                date_loaded TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS roads (
+                id SERIAL PRIMARY KEY,
+                road_id VARCHAR(50),
+                type VARCHAR(50),
+                start_lat DOUBLE PRECISION,
+                start_lon DOUBLE PRECISION,
+                end_lat DOUBLE PRECISION,
+                end_lon DOUBLE PRECISION,
+                geom GEOMETRY(LineString, 4326),
+                length_km DOUBLE PRECISION,
+                filename VARCHAR(255),
+                date_loaded TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS accessibility_results (
+                id SERIAL PRIMARY KEY,
+                sector_name VARCHAR(255),
+                sector_district VARCHAR(100),
+                nearest_school VARCHAR(255),
+                school_district VARCHAR(100),
+                distance_km DOUBLE PRECISION,
+                travel_time_min DOUBLE PRECISION,
+                road_connectivity DOUBLE PRECISION,
+                road_density DOUBLE PRECISION,
+                category VARCHAR(50),
+                priority_score DOUBLE PRECISION,
+                population INTEGER,
+                lat DOUBLE PRECISION,
+                lon DOUBLE PRECISION,
+                geom GEOMETRY(Point, 4326),
+                analysis_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_schools_geom ON schools USING GIST (geom);
+            CREATE INDEX IF NOT EXISTS idx_sectors_geom ON sectors USING GIST (geom);
+            CREATE INDEX IF NOT EXISTS idx_roads_geom ON roads USING GIST (geom);
+            CREATE INDEX IF NOT EXISTS idx_results_geom ON accessibility_results USING GIST (geom);
+        `);
+        console.log('✅ PostGIS tables and spatial indexes created');
+    } catch (err) {
+        console.error('Database initialization error:', err.message);
+    }
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// Load CSV data to PostgreSQL
+async function loadCSVToDatabase(filePath, type) {
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const records = parse(content, { columns: true, skip_empty_lines: true });
+        
+        let count = 0;
+        const fileName = path.basename(filePath);
+        
+        if (type === 'schools') {
+            await pool.query('DELETE FROM schools');
+            for (const r of records) {
+                const lat = parseFloat(r.lat || r.latitude || 0);
+                const lon = parseFloat(r.lon || r.longitude || 0);
+                if (lat !== 0 && lon !== 0) {
+                    await pool.query(`
+                        INSERT INTO schools (school_id, name, lat, lon, geom, capacity, sector, district, filename, date_loaded)
+                        VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8, $9, $10, CURRENT_TIMESTAMP)
+                    `, [
+                        r.id || r.school_id || `SCH_${count}`,
+                        r.name || r.school_name || 'School',
+                        lat, lon, lon, lat,
+                        parseInt(r.capacity) || 200,
+                        r.sector || r.sector_name || 'Unknown',
+                        r.district || 'Musanze',
+                        fileName
+                    ]);
+                    count++;
+                }
+            }
+        } 
+        else if (type === 'sectors') {
+            await pool.query('DELETE FROM sectors');
+            for (const r of records) {
+                const lat = parseFloat(r.lat || r.latitude || 0);
+                const lon = parseFloat(r.lon || r.longitude || 0);
+                if (lat !== 0 && lon !== 0) {
+                    await pool.query(`
+                        INSERT INTO sectors (sector_id, name, lat, lon, geom, population, households, district, filename, date_loaded)
+                        VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8, $9, $10, CURRENT_TIMESTAMP)
+                    `, [
+                        r.id || r.sector_id || `SEC_${count}`,
+                        r.name || r.sector_name || 'Sector',
+                        lat, lon, lon, lat,
+                        parseInt(r.population) || 5000,
+                        parseInt(r.households) || 1000,
+                        r.district || 'Musanze',
+                        fileName
+                    ]);
+                    count++;
+                }
+            }
+        }
+        else if (type === 'roads') {
+            await pool.query('DELETE FROM roads');
+            for (const r of records) {
+                const start_lat = parseFloat(r.start_lat || r.lat1 || 0);
+                const start_lon = parseFloat(r.start_lon || r.lon1 || 0);
+                const end_lat = parseFloat(r.end_lat || r.lat2 || 0);
+                const end_lon = parseFloat(r.end_lon || r.lon2 || 0);
+                if (start_lat !== 0 && start_lon !== 0 && end_lat !== 0 && end_lon !== 0) {
+                    const length = parseFloat(r.length_km) || calculateDistance(start_lat, start_lon, end_lat, end_lon);
+                    await pool.query(`
+                        INSERT INTO roads (road_id, type, start_lat, start_lon, end_lat, end_lon, geom, length_km, filename, date_loaded)
+                        VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakeLine(ST_MakePoint($7, $8), ST_MakePoint($9, $10)), 4326), $11, $12, CURRENT_TIMESTAMP)
+                    `, [
+                        r.id || r.road_id || `RD_${count}`,
+                        r.type || r.road_type || 'secondary',
+                        start_lat, start_lon, end_lat, end_lon,
+                        start_lon, start_lat, end_lon, end_lat,
+                        length,
+                        fileName
+                    ]);
+                    count++;
+                }
+            }
+        }
+        return count;
+    } catch (error) {
+        console.log(`Error loading ${path.basename(filePath)}: ${error.message}`);
+        return 0;
+    }
+}
+
+// Find nearest school using PostGIS spatial query
+async function findNearestSchool(lat, lon) {
+    const query = `
+        SELECT id, school_id, name, lat, lon, capacity, sector, district,
+            ST_Distance(
+                geom::geography,
+                ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+            ) / 1000 as distance_km
+        FROM schools
+        ORDER BY geom::geography <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+        LIMIT 1
+    `;
+    const result = await pool.query(query, [lon, lat]);
+    return result.rows[0];
+}
+
+// Load all data
+async function loadAllData() {
+    console.log('\n📂 Loading data from Desktop/DATA folder...');
+    
+    if (!fs.existsSync(DATA_PATH)) {
+        console.log('⚠️ DATA folder not found! Creating...');
+        fs.mkdirSync(DATA_PATH, { recursive: true });
+        createMusanzeData();
+        return;
+    }
+    
+    const files = fs.readdirSync(DATA_PATH);
+    const csvFiles = files.filter(f => f.toLowerCase().endsWith('.csv'));
+    
+    console.log(`📄 Found ${csvFiles.length} CSV files`);
+    
+    for (const file of csvFiles) {
+        const filePath = path.join(DATA_PATH, file);
+        const lowerName = file.toLowerCase();
+        
+        if (lowerName.includes('school')) {
+            const count = await loadCSVToDatabase(filePath, 'schools');
+            console.log(`   ✅ ${count} schools from ${file}`);
+        }
+        else if (lowerName.includes('sector')) {
+            const count = await loadCSVToDatabase(filePath, 'sectors');
+            console.log(`   ✅ ${count} sectors from ${file}`);
+        }
+        else if (lowerName.includes('road')) {
+            const count = await loadCSVToDatabase(filePath, 'roads');
+            console.log(`   ✅ ${count} roads from ${file}`);
+        }
+    }
+    
+    const schoolResult = await pool.query('SELECT COUNT(*) as count FROM schools');
+    const sectorResult = await pool.query('SELECT COUNT(*) as count FROM sectors');
+    const roadResult = await pool.query('SELECT COUNT(*) as count FROM roads');
+    
+    console.log(`\n📊 DATA SUMMARY:`);
+    console.log(`   🏫 Schools: ${schoolResult.rows[0].count}`);
+    console.log(`   🏘️ Sectors: ${sectorResult.rows[0].count}`);
+    console.log(`   🛣️ Roads: ${roadResult.rows[0].count}`);
+}
+
+function createMusanzeData() {
+    console.log('📝 Creating Musanze District sample data...');
+    
+    const schoolsCSV = `id,name,lat,lon,capacity,sector,district
+SCH_001,G.S. Musanze,-1.4950,29.6350,1200,Musanze,Musanze
+SCH_002,Ecole Secondaire Cyuve,-1.4800,29.6200,800,Cyuve,Musanze
+SCH_003,College Shingiro,-1.5100,29.6500,600,Shingiro,Musanze
+SCH_004,G.S. Kinigi,-1.4700,29.6100,400,Kinigi,Musanze
+SCH_005,Lycee Nyange,-1.5200,29.6600,900,Nyange,Musanze`;
+    fs.writeFileSync(path.join(DATA_PATH, 'schools_musanze.csv'), schoolsCSV);
+    
+    const sectorsCSV = `id,name,lat,lon,population,households,district
+SEC_001,Musanze Sector,-1.4950,29.6350,45000,9000,Musanze
+SEC_002,Cyuve Sector,-1.4800,29.6200,12000,2400,Musanze
+SEC_003,Shingiro Sector,-1.5100,29.6500,8000,1600,Musanze
+SEC_004,Kinigi Sector,-1.4700,29.6100,15000,3000,Musanze
+SEC_005,Nyange Sector,-1.5200,29.6600,6000,1200,Musanze`;
+    fs.writeFileSync(path.join(DATA_PATH, 'sectors_musanze.csv'), sectorsCSV);
+    
+    const roadsCSV = `id,type,start_lat,start_lon,end_lat,end_lon,length_km
+RD_001,primary,-1.4950,29.6350,-1.4800,29.6200,12.5
+RD_002,primary,-1.4950,29.6350,-1.5100,29.6500,15.3
+RD_003,secondary,-1.4800,29.6200,-1.4700,29.6100,8.2`;
+    fs.writeFileSync(path.join(DATA_PATH, 'roads_musanze.csv'), roadsCSV);
+    
+    console.log('   ✅ Created Musanze sample data');
+}
+
+// Run analysis using PostGIS
+async function runAnalysis() {
+    console.log('\n🔍 Analyzing Musanze District Accessibility with PostGIS...');
+    
+    const sectors = await pool.query('SELECT * FROM sectors');
+    const schools = await pool.query('SELECT * FROM schools');
+    
+    console.log(`   Data: ${schools.rows.length} Schools, ${sectors.rows.length} Sectors`);
+    
+    const results = [];
+    
+    for (const sector of sectors.rows) {
+        const nearest = await findNearestSchool(sector.lat, sector.lon);
+        
+        const distance = nearest?.distance_km || 0;
+        const travelTime = distance / 30 * 60;
+        
+        let category;
+        if (distance <= 2) category = "Highly Accessible";
+        else if (distance <= 5) category = "Moderately Accessible";
+        else if (distance <= 10) category = "Poorly Accessible";
+        else category = "Severely Underserved";
+        
+        const priorityScore = Math.min(1, distance / 20);
+        
+        results.push({
+            sector_name: sector.name,
+            sector_district: sector.district,
+            nearest_school: nearest?.name || 'N/A',
+            school_district: nearest?.district || 'N/A',
+            distance_km: distance.toFixed(2),
+            travel_time_min: travelTime.toFixed(0),
+            category: category,
+            priority_score: priorityScore.toFixed(2),
+            population: sector.population,
+            lat: sector.lat,
+            lon: sector.lon
+        });
+    }
+    
+    // Save results
+    await pool.query('DELETE FROM accessibility_results');
+    for (const r of results) {
+        await pool.query(`
+            INSERT INTO accessibility_results (sector_name, sector_district, nearest_school, school_district, distance_km, travel_time_min, category, priority_score, population, lat, lon, geom, analysis_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, ST_SetSRID(ST_MakePoint($12, $13), 4326), CURRENT_TIMESTAMP)
+        `, [r.sector_name, r.sector_district, r.nearest_school, r.school_district, r.distance_km, r.travel_time_min, r.category, r.priority_score, r.population, r.lat, r.lon, r.lon, r.lat]);
+    }
+    
+    generateGeoJSON(results);
+    
+    console.log(`\n📊 ANALYSIS RESULTS:`);
+    console.log(`   ✅ Total Sectors: ${results.length}`);
+    console.log(`   🟢 Highly Accessible: ${results.filter(r => r.category === 'Highly Accessible').length}`);
+    console.log(`   🟡 Moderately Accessible: ${results.filter(r => r.category === 'Moderately Accessible').length}`);
+    console.log(`   🟠 Poorly Accessible: ${results.filter(r => r.category === 'Poorly Accessible').length}`);
+    console.log(`   🔴 Severely Underserved: ${results.filter(r => r.category === 'Severely Underserved').length}`);
+    
+    return results;
+}
+
+function generateGeoJSON(results) {
+    console.log('\n🗺️ Generating GeoJSON outputs...');
+    
+    const features = results.map(r => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [r.lon, r.lat] },
+        properties: { sector: r.sector_name, category: r.category, distance_km: r.distance_km, travel_time: r.travel_time_min, priority_score: r.priority_score, population: r.population, nearest_school: r.nearest_school }
+    }));
+    
+    const geojson = { type: "FeatureCollection", features: features };
+    fs.writeFileSync(path.join(OUTPUTS_PATH, 'musanze_sectors.geojson'), JSON.stringify(geojson, null, 2));
+    
+    console.log(`   ✅ GeoJSON saved to: ${OUTPUTS_PATH}`);
+}
+
+// API Endpoints
+app.get('/api/data-status', async (req, res) => {
+    const schools = await pool.query('SELECT COUNT(*) as count FROM schools');
+    const sectors = await pool.query('SELECT COUNT(*) as count FROM sectors');
+    const roads = await pool.query('SELECT COUNT(*) as count FROM roads');
+    const results = await pool.query('SELECT COUNT(*) as count FROM accessibility_results');
+    res.json({ 
+        schools: schools.rows[0].count, 
+        sectors: sectors.rows[0].count, 
+        roads: roads.rows[0].count, 
+        results: results.rows[0].count,
+        database: "PostgreSQL with PostGIS"
+    });
+});
+
+app.post('/api/analyze', async (req, res) => {
+    const results = await runAnalysis();
+    res.json({ success: true, count: results.length });
+});
+
+app.get('/api/results', async (req, res) => {
+    const results = await pool.query('SELECT * FROM accessibility_results ORDER BY priority_score DESC');
+    const stats = {
+        total_sectors: results.rows.length,
+        underserved_count: results.rows.filter(r => r.category === 'Poorly Accessible' || r.category === 'Severely Underserved').length,
+        highly_accessible: results.rows.filter(r => r.category === 'Highly Accessible').length,
+        moderately_accessible: results.rows.filter(r => r.category === 'Moderately Accessible').length,
+        avg_distance_km: (results.rows.reduce((s, r) => s + parseFloat(r.distance_km), 0) / results.rows.length || 0).toFixed(2),
+        avg_travel_time_min: (results.rows.reduce((s, r) => s + parseFloat(r.travel_time_min), 0) / results.rows.length || 0).toFixed(0)
+    };
+    res.json({ accessibility: results.rows, statistics: stats });
+});
+
+app.get('/api/geojson/:name', (req, res) => {
+    const filePath = path.join(OUTPUTS_PATH, `${req.params.name}.geojson`);
+    fs.existsSync(filePath) ? res.sendFile(filePath) : res.status(404).json({ error: 'File not found' });
+});
+
+app.use(express.static('public'));
+
+// Initialize
+async function init() {
+    await initDatabase();
+    await loadAllData();
+    await runAnalysis();
+}
+
+init();
+
+app.listen(PORT, () => {
+    console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+    console.log(`║     POSTGRESQL + POSTGIS GIS PLATFORM                        ║`);
+    console.log(`║     http://localhost:${PORT}                                      ║`);
+    console.log(`║     Database: PostgreSQL with PostGIS                        ║`);
+    console.log(`║     Spatial Indexing: Enabled                                ║`);
+    console.log(`╚══════════════════════════════════════════════════════════════╝`);
+});

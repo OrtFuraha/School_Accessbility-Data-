@@ -1,604 +1,365 @@
+'use strict';
+require('dotenv').config();
 const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const { parse } = require('csv-parse/sync');
-const axios = require('axios');
+const cors    = require('cors');
+const path    = require('path');
+const fs2     = require('fs');
+const sqlite3 = require('sqlite3').verbose();
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 1111;
+const DB   = path.join(process.env.HOME,'Desktop/School_Accessibility_Data/spatial_gis.db');
 
-const DESKTOP_PATH = path.join(os.homedir(), 'Desktop', 'School_Accessibility_Data');
-const OUTPUTS_PATH = path.join(DESKTOP_PATH, 'outputs');
-const DATA_PATH = path.join(os.homedir(), 'Desktop', 'DATA');
+app.use(cors()); app.use(express.json({limit:'50mb'}));
+app.use(express.static(path.join(__dirname,'public')));
 
-[DESKTOP_PATH, OUTPUTS_PATH].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+let _db=null;
+function getDB(){
+  if(_db) return _db;
+  if(!fs2.existsSync(DB)) throw new Error('DB not found — run: node build_database.js');
+  _db=new sqlite3.Database(DB,sqlite3.OPEN_READWRITE); return _db;
+}
+const A=(sql,p=[])=>new Promise((r,j)=>getDB().all(sql,p,(e,d)=>e?j(e):r(d||[])));
+const G=(sql,p=[])=>new Promise((r,j)=>getDB().get(sql,p,(e,d)=>e?j(e):r(d||null)));
+const R=(sql,p=[])=>new Promise((r,j)=>getDB().run(sql,p,function(e){e?j(e):r(this)}));
+
+// ── Haversine distance in KM ──────────────────────────────────────────
+function hav(lo1,la1,lo2,la2){
+  const R=6371,dL=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ── Point-in-polygon ──────────────────────────────────────────────────
+function pip(lon,lat,geom){
+  try{
+    const rings=geom.type==='MultiPolygon'?geom.coordinates[0]:geom.coordinates;
+    const ring=rings[0]; let inside=false;
+    for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+      const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+      if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside;
+  }catch{return false;}
+}
+
+// ── Roads inside sector polygon ───────────────────────────────────────
+function roadsIn(roads,gjStr){
+  try{
+    const sg=JSON.parse(gjStr); let len=0,cnt=0;
+    for(const r of roads) if(r.lon&&r.lat&&pip(r.lon,r.lat,sg)){len+=r.length_m||0;cnt++;}
+    return {count:cnt, km:+(len/1000).toFixed(2)};
+  }catch{return{count:0,km:0};}
+}
+
+// ── PURE HAVERSINE nearest school (reliable, correct units) ───────────
+function nearestSchoolSL(lon,lat,schools){
+  let best=null, bestD=Infinity;
+  for(const s of schools){
+    if(!s.lon||!s.lat) continue;
+    const d=hav(lon,lat,s.lon,s.lat);
+    if(d<bestD){bestD=d;best=s;}
+  }
+  return best?{school:best,distKm:bestD}:null;
+}
+
+// ── CORE ANALYSIS (straight-line — reliable, no network bugs) ─────────
+async function analyse(){
+  const sectors=await A('SELECT * FROM sectors');
+  const schools=await A('SELECT * FROM schools');
+  const roads  =await A('SELECT * FROM roads');
+  if(!sectors.length) throw new Error('No sectors');
+  if(!schools.length) throw new Error('No schools');
+
+  // Count road network nodes for display only
+  const netNodes = new Set();
+  for(const road of roads){
+    let geom; try{geom=road.geojson?JSON.parse(road.geojson):null;}catch{continue;}
+    if(!geom) continue;
+    const segs=geom.type==='MultiLineString'?geom.coordinates:[geom.coordinates];
+    for(const seg of segs){
+      for(const coord of (seg||[])){
+        if(coord&&coord[0]&&coord[1])
+          netNodes.add(coord[0].toFixed(4)+'_'+coord[1].toFixed(4));
+      }
+    }
+  }
+  console.log('   Network nodes counted:',netNodes.size);
+
+  await R('DELETE FROM accessibility_results');
+  await R('DELETE FROM proposed_roads');
+  await R('DELETE FROM service_areas');
+
+  const results=[],proposed=[];
+
+  for(const sec of sectors){
+    const cx=sec.lon, cy=sec.lat;
+    if(!cx||!cy) continue;
+
+    // ── Nearest school: straight-line haversine (correct km) ──────────
+    const nr=nearestSchoolSL(cx,cy,schools);
+    const distKm=nr?+nr.distKm.toFixed(3):99;
+    const nearest=nr?.school;
+
+    // ── Schools within radii ──────────────────────────────────────────
+    const s3km=schools.filter(s=>s.lon&&s.lat&&hav(cx,cy,s.lon,s.lat)<=3).length;
+
+    // ── Road stats inside sector polygon ──────────────────────────────
+    const rs=sec.geojson?roadsIn(roads,sec.geojson):{count:0,km:0};
+
+    // ── Road connectivity: roads within 3km ───────────────────────────
+    const rNear=roads.filter(r=>r.lon&&r.lat&&hav(cx,cy,r.lon,r.lat)<=3);
+    const rLenKm=rNear.reduce((s,r)=>s+(r.length_m||0),0)/1000;
+    const connScore=+Math.min(100,(rLenKm/(3*2))*100).toFixed(1);
+
+    const areaSqkm=sec.area_sqkm||1;
+    const roadDen=rs.km/areaSqkm;
+
+    // ── Travel time ───────────────────────────────────────────────────
+    // Paved ratio determines speed: paved=40km/h, unpaved=20km/h
+    const pavedCount=rNear.filter(r=>(r.status||'').toLowerCase().includes('pav')||(r.surface||'').toLowerCase().includes('pav')).length;
+    const pavedRatio=rNear.length>0?pavedCount/rNear.length:0;
+    const speed=20+(pavedRatio*20); // 20–40 km/h
+    const travelMin=+(distKm/speed*60).toFixed(1);
+
+    // ── WEIGHTED SCORING MODEL ────────────────────────────────────────
+    // Distance score: 100 if ≤0.5km, 0 if ≥10km
+    const dS=+Math.max(0,Math.min(100,100-((distKm*1000-500)/9500)*100)).toFixed(1);
+    // Travel time score: 100 if ≤5min, 0 if ≥60min
+    const tS=+Math.max(0,Math.min(100,100-(travelMin/60)*100)).toFixed(1);
+    // Road connectivity score (already 0–100)
+    const rS=connScore;
+    // School coverage score: 25 pts per school within 3km, max 100
+    const sS=+Math.min(100,s3km*25).toFixed(1);
+
+    // Weighted composite: 40% dist, 20% travel, 20% road, 20% school
+    const score=+(dS*0.40+tS*0.20+rS*0.20+sS*0.20).toFixed(1);
+    const cls=score>=65?'Highly Accessible':score>=35?'Moderately Accessible':'Underserved';
+
+    await R(`INSERT INTO accessibility_results(
+      sector_id,sector_name,nearest_school_id,nearest_school_name,
+      distance_to_nearest_school,distance_km,travel_time_minutes,
+      road_connectivity_score,road_density,school_count_in_radius,
+      accessibility_score,accessibility_class,
+      dist_score,road_score,school_score,road_count,total_road_km,
+      centroid_lon,centroid_lat,method,notes,geojson)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [sec.id,sec.name,nearest?.id,nearest?.name,
+       distKm*1000,distKm,travelMin,rS,+roadDen.toFixed(4),s3km,
+       score,cls,dS,rS,sS,rs.count,rs.km,cx,cy,'haversine',
+       `D:${dS}(40%) T:${tS}(20%) R:${rS}(20%) S:${sS}(20%)`,sec.geojson]);
+
+    results.push({sector_id:sec.id,sector_name:sec.name,
+      nearest_school_name:nearest?.name,distance_km:distKm,
+      travel_time_minutes:travelMin,accessibility_class:cls,
+      accessibility_score:score,centroid_lon:cx,centroid_lat:cy});
+
+    // ── Proposed road for non-highly-accessible sectors ───────────────
+    if(cls!=='Highly Accessible'&&nearest){
+      const p={
+        priority:cls==='Underserved'?1:2,
+        priority_label:`${sec.name} → ${nearest.name}`,
+        estimated_length_km:+distKm.toFixed(2),
+        benefit_score:+Math.max(0,100-distKm*10).toFixed(1),
+        intervention_type:distKm>5?'New Road Construction':distKm>2?'Road Upgrade':'Surface Improvement',
+        from_sector:sec.name, to_school:nearest.name,
+        geojson:JSON.stringify({type:'LineString',coordinates:[[cx,cy],[nearest.lon,nearest.lat]]})
+      };
+      await R('INSERT INTO proposed_roads(priority,priority_label,estimated_length_km,benefit_score,intervention_type,status,from_sector,to_school,geojson) VALUES(?,?,?,?,?,?,?,?,?)',
+        [p.priority,p.priority_label,p.estimated_length_km,p.benefit_score,p.intervention_type,'proposed',p.from_sector,p.to_school,p.geojson]);
+      proposed.push(p);
+    }
+  }
+
+  // ── Service area circles for schools ─────────────────────────────────
+  const schSample=schools.slice(0,20);
+  for(const sch of schSample){
+    if(!sch.lon||!sch.lat) continue;
+    for(const radius of [1,2,3]){
+      const pts=48;
+      const coords=Array.from({length:pts+1},(_,i)=>{
+        const angle=i*(2*Math.PI/pts);
+        const dlat=radius/111.32;
+        const dlon=radius/(111.32*Math.cos(sch.lat*Math.PI/180));
+        return [+(sch.lon+dlon*Math.cos(angle)).toFixed(6),+(sch.lat+dlat*Math.sin(angle)).toFixed(6)];
+      });
+      await R('INSERT INTO service_areas(school_id,school_name,radius_km,geojson) VALUES(?,?,?,?)',
+        [sch.id,sch.name,radius,JSON.stringify({type:'Polygon',coordinates:[coords]})]);
+    }
+  }
+
+  return{results,proposed,networkNodes:netNodes.size};
+}
+
+// ── GeoJSON helper ────────────────────────────────────────────────────
+const fc=(rows,gf='geojson')=>({type:'FeatureCollection',features:rows.map(r=>{
+  const{[gf]:g,...p}=r; let geom=null;
+  try{geom=g?JSON.parse(g):null;}catch{}
+  return{type:'Feature',properties:p,geometry:geom};
+})});
+
+// ── ROUTES ────────────────────────────────────────────────────────────
+app.get('/api/gis/stats',async(req,res)=>{
+  try{
+    const[sc,rd,sec,di,pr]=await Promise.all([
+      G('SELECT COUNT(*) c FROM schools'),G('SELECT COUNT(*) c FROM roads'),
+      G('SELECT COUNT(*) c FROM sectors'),G('SELECT COUNT(*) c FROM districts'),
+      G('SELECT COUNT(*) c FROM proposed_roads'),
+    ]);
+    const rl=await G('SELECT ROUND(SUM(length_m)/1000,1) km FROM roads');
+    let acc={highly:0,moderate:0,underserved:0,avg_score:0,avg_dist:0};
+    try{const r=await G(`SELECT
+      SUM(CASE WHEN accessibility_class='Highly Accessible' THEN 1 ELSE 0 END) highly,
+      SUM(CASE WHEN accessibility_class='Moderately Accessible' THEN 1 ELSE 0 END) moderate,
+      SUM(CASE WHEN accessibility_class='Underserved' THEN 1 ELSE 0 END) underserved,
+      ROUND(AVG(accessibility_score),1) avg_score,
+      ROUND(AVG(distance_km),2) avg_dist
+      FROM accessibility_results`);if(r)acc=r;}catch{}
+    res.json({schools:sc?.c||0,roads:rd?.c||0,sectors:sec?.c||0,
+      districts:di?.c||0,proposed_roads:pr?.c||0,
+      roadLengthKm:rl?.km||0,accessibility:acc});
+  }catch(e){res.status(500).json({error:e.message});}
 });
 
-console.log(`\n📁 Files saved to: ${DESKTOP_PATH}`);
-console.log(`📂 Data source: ${DATA_PATH}`);
-
-app.use(express.json());
-app.use(express.static('public'));
-app.use('/outputs', express.static(OUTPUTS_PATH));
-
-const database = {
-    schools: [],
-    villages: [],
-    roads: [],
-    accessibilityResults: [],
-    proposedRoads: []
-};
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-}
-
-// OSRM Routing function
-async function getOSRMRoute(startLat, startLon, endLat, endLon) {
-    try {
-        // Using OSRM demo server (for production, you'd set up your own OSRM server with Rwanda data)
-        const url = `http://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
-        
-        const response = await axios.get(url);
-        
-        if (response.data && response.data.routes && response.data.routes.length > 0) {
-            const route = response.data.routes[0];
-            const distance = route.distance / 1000; // Convert to km
-            const duration = route.duration / 60; // Convert to minutes
-            const geometry = route.geometry;
-            
-            // Decode polyline to get coordinates
-            const decodedPoints = decodePolyline(geometry);
-            
-            return {
-                success: true,
-                distance_km: distance,
-                travel_time_min: duration,
-                route_points: decodedPoints,
-                geometry: geometry
-            };
-        } else {
-            return {
-                success: false,
-                message: "No route found"
-            };
-        }
-    } catch (error) {
-        console.log("OSRM error, using direct line:", error.message);
-        return {
-            success: false,
-            distance_km: calculateDistance(startLat, startLon, endLat, endLon),
-            travel_time_min: calculateDistance(startLat, startLon, endLat, endLon) / 30 * 60,
-            route_points: [[endLon, endLat], [startLon, startLat]],
-            message: "Using direct line (OSRM unavailable)"
-        };
-    }
-}
-
-// Decode polyline (simplified version)
-function decodePolyline(encoded) {
-    if (!encoded) return [];
-    
-    let points = [];
-    let index = 0, len = encoded.length;
-    let lat = 0, lng = 0;
-    
-    while (index < len) {
-        let b, shift = 0, result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lat += dlat;
-        
-        shift = 0;
-        result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lng += dlng;
-        
-        points.push([lng / 1e5, lat / 1e5]);
-    }
-    
-    return points;
-}
-
-// Build road network graph for local routing
-function buildRoadGraph() {
-    const graph = {};
-    database.roads.forEach(road => {
-        const startKey = `${road.start_lat},${road.start_lon}`;
-        const endKey = `${road.end_lat},${road.end_lon}`;
-        
-        if (!graph[startKey]) graph[startKey] = [];
-        if (!graph[endKey]) graph[endKey] = [];
-        
-        const distance = calculateDistance(road.start_lat, road.start_lon, road.end_lat, road.end_lon);
-        
-        graph[startKey].push({ node: endKey, distance: distance, roadId: road.id });
-        graph[endKey].push({ node: startKey, distance: distance, roadId: road.id });
-    });
-    
-    return graph;
-}
-
-// Local Dijkstra routing
-function findLocalRoute(startLat, startLon, endLat, endLon, roadGraph) {
-    if (Object.keys(roadGraph).length === 0) {
-        return {
-            distance_km: calculateDistance(startLat, startLon, endLat, endLon),
-            travel_time_min: calculateDistance(startLat, startLon, endLat, endLon) / 30 * 60,
-            route_points: [[endLon, endLat], [startLon, startLat]]
-        };
-    }
-    
-    // Find nearest nodes
-    let startNode = null;
-    let startNodeDist = Infinity;
-    let endNode = null;
-    let endNodeDist = Infinity;
-    
-    for (let node of Object.keys(roadGraph)) {
-        const [nodeLat, nodeLon] = node.split(',').map(Number);
-        const distToStart = calculateDistance(startLat, startLon, nodeLat, nodeLon);
-        const distToEnd = calculateDistance(endLat, endLon, nodeLat, nodeLon);
-        
-        if (distToStart < startNodeDist) {
-            startNodeDist = distToStart;
-            startNode = node;
-        }
-        if (distToEnd < endNodeDist) {
-            endNodeDist = distToEnd;
-            endNode = node;
-        }
-    }
-    
-    if (!startNode || !endNode) {
-        return {
-            distance_km: calculateDistance(startLat, startLon, endLat, endLon),
-            travel_time_min: calculateDistance(startLat, startLon, endLat, endLon) / 30 * 60,
-            route_points: [[endLon, endLat], [startLon, startLat]]
-        };
-    }
-    
-    // Dijkstra
-    const distances = {};
-    const previous = {};
-    const nodes = new Set(Object.keys(roadGraph));
-    
-    for (let node of nodes) distances[node] = Infinity;
-    distances[startNode] = 0;
-    
-    while (nodes.size > 0) {
-        let current = null;
-        let minDist = Infinity;
-        for (let node of nodes) {
-            if (distances[node] < minDist) {
-                minDist = distances[node];
-                current = node;
-            }
-        }
-        
-        if (current === null || current === endNode) break;
-        nodes.delete(current);
-        
-        for (let neighbor of roadGraph[current]) {
-            const alt = distances[current] + neighbor.distance;
-            if (alt < distances[neighbor.node]) {
-                distances[neighbor.node] = alt;
-                previous[neighbor.node] = current;
-            }
-        }
-    }
-    
-    // Reconstruct path
-    const path = [];
-    let current = endNode;
-    while (current && previous[current]) {
-        const [lat, lon] = current.split(',').map(Number);
-        path.unshift([lon, lat]);
-        current = previous[current];
-    }
-    if (startNode) {
-        const [lat, lon] = startNode.split(',').map(Number);
-        path.unshift([lon, lat]);
-    }
-    
-    const totalDistance = (distances[endNode] !== Infinity ? distances[endNode] : 0) + startNodeDist + endNodeDist;
-    
-    return {
-        distance_km: totalDistance,
-        travel_time_min: totalDistance / 30 * 60,
-        route_points: path
-    };
-}
-
-// Load data from Desktop/DATA folder
-function loadDataFromDesktop() {
-    console.log('\n📂 Loading data from Desktop/DATA folder...');
-    
-    if (!fs.existsSync(DATA_PATH)) {
-        console.log('⚠️ DATA folder not found. Creating sample Musanze data...');
-        fs.mkdirSync(DATA_PATH, { recursive: true });
-        return createMusanzeSampleData();
-    }
-    
-    const files = fs.readdirSync(DATA_PATH);
-    
-    for (const file of files) {
-        const filePath = path.join(DATA_PATH, file);
-        if (file.endsWith('.csv')) {
-            const content = fs.readFileSync(filePath, 'utf8');
-            const records = parse(content, { columns: true, skip_empty_lines: true });
-            
-            if (file.toLowerCase().includes('school')) {
-                database.schools = records.map(r => ({
-                    id: r.id || r.school_id || `SCH_${Math.random()}`,
-                    name: r.name || r.school_name || 'School',
-                    lat: parseFloat(r.lat || r.latitude || 0),
-                    lon: parseFloat(r.lon || r.longitude || 0),
-                    capacity: parseInt(r.capacity) || 200
-                })).filter(s => s.lat !== 0 && s.lon !== 0);
-                console.log(`✅ Loaded ${database.schools.length} schools from ${file}`);
-            }
-            else if (file.toLowerCase().includes('village')) {
-                database.villages = records.map(r => ({
-                    id: r.id || r.village_id || `VIL_${Math.random()}`,
-                    name: r.name || r.village_name || 'Village',
-                    lat: parseFloat(r.lat || r.latitude || 0),
-                    lon: parseFloat(r.lon || r.longitude || 0),
-                    population: parseInt(r.population) || 500
-                })).filter(v => v.lat !== 0 && v.lon !== 0);
-                console.log(`✅ Loaded ${database.villages.length} villages from ${file}`);
-            }
-            else if (file.toLowerCase().includes('road')) {
-                database.roads = records.map(r => ({
-                    id: r.id || r.road_id || `RD_${Math.random()}`,
-                    type: r.type || r.road_type || 'secondary',
-                    start_lat: parseFloat(r.start_lat || r.lat1 || 0),
-                    start_lon: parseFloat(r.start_lon || r.lon1 || 0),
-                    end_lat: parseFloat(r.end_lat || r.lat2 || 0),
-                    end_lon: parseFloat(r.end_lon || r.lon2 || 0),
-                    length_km: parseFloat(r.length_km) || calculateDistance(
-                        parseFloat(r.start_lat || r.lat1 || 0),
-                        parseFloat(r.start_lon || r.lon1 || 0),
-                        parseFloat(r.end_lat || r.lat2 || 0),
-                        parseFloat(r.end_lon || r.lon2 || 0)
-                    )
-                })).filter(r => r.start_lat !== 0 && r.start_lon !== 0);
-                console.log(`✅ Loaded ${database.roads.length} roads from ${file}`);
-            }
-        }
-    }
-    
-    if (database.schools.length === 0 || database.villages.length === 0) {
-        console.log('⚠️ Some data missing. Creating sample Musanze data...');
-        createMusanzeSampleData();
-    }
-}
-
-function createMusanzeSampleData() {
-    database.schools = [
-        { id: 'SCH_001', name: 'Ecole Secondaire Musanze', lat: -1.4950, lon: 29.6350, capacity: 1200 },
-        { id: 'SCH_002', name: 'GS Musanze', lat: -1.4900, lon: 29.6300, capacity: 800 },
-        { id: 'SCH_003', name: 'College de Musanze', lat: -1.5000, lon: 29.6400, capacity: 600 },
-        { id: 'SCH_004', name: 'Ecole Primaire Musanze', lat: -1.4850, lon: 29.6250, capacity: 400 },
-        { id: 'SCH_005', name: 'Lycee de Musanze', lat: -1.5050, lon: 29.6450, capacity: 900 }
-    ];
-    
-    database.villages = [
-        { id: 'VIL_001', name: 'Musanze Center', lat: -1.4950, lon: 29.6350, population: 45000 },
-        { id: 'VIL_002', name: 'Cyuve', lat: -1.4800, lon: 29.6200, population: 12000 },
-        { id: 'VIL_003', name: 'Shingiro', lat: -1.5100, lon: 29.6500, population: 8000 },
-        { id: 'VIL_004', name: 'Kinigi', lat: -1.4700, lon: 29.6100, population: 15000 },
-        { id: 'VIL_005', name: 'Nyange', lat: -1.5200, lon: 29.6600, population: 6000 },
-        { id: 'VIL_006', name: 'Remera', lat: -1.4600, lon: 29.6000, population: 10000 },
-        { id: 'VIL_007', name: 'Busogo', lat: -1.5300, lon: 29.6700, population: 5000 },
-        { id: 'VIL_008', name: 'Gataraga', lat: -1.4450, lon: 29.5900, population: 7000 }
-    ];
-    
-    database.roads = [
-        { id: 'RD_001', type: 'primary', start_lat: -1.4950, start_lon: 29.6350, end_lat: -1.4800, end_lon: 29.6200, length_km: 12.5 },
-        { id: 'RD_002', type: 'primary', start_lat: -1.4950, start_lon: 29.6350, end_lat: -1.5100, end_lon: 29.6500, length_km: 15.3 },
-        { id: 'RD_003', type: 'secondary', start_lat: -1.4800, start_lon: 29.6200, end_lat: -1.4700, end_lon: 29.6100, length_km: 8.2 },
-        { id: 'RD_004', type: 'secondary', start_lat: -1.5100, start_lon: 29.6500, end_lat: -1.5200, end_lon: 29.6600, length_km: 6.5 },
-        { id: 'RD_005', type: 'tertiary', start_lat: -1.4700, start_lon: 29.6100, end_lat: -1.4600, end_lon: 29.6000, length_km: 5.8 }
-    ];
-    
-    console.log(`✅ Created Musanze sample data: ${database.schools.length} schools, ${database.villages.length} villages, ${database.roads.length} roads`);
-}
-
-function analyzeAccessibility() {
-    console.log('\n[Analysis] Running accessibility analysis...');
-    database.accessibilityResults = [];
-    const roadGraph = buildRoadGraph();
-    
-    database.villages.forEach(village => {
-        let nearestSchool = null;
-        let minDistance = Infinity;
-        
-        database.schools.forEach(school => {
-            const route = findLocalRoute(village.lat, village.lon, school.lat, school.lon, roadGraph);
-            if (route.distance_km < minDistance) {
-                minDistance = route.distance_km;
-                nearestSchool = school;
-            }
-        });
-        
-        const travelTime = minDistance / 30 * 60;
-        
-        let category, status;
-        if (minDistance <= 2) {
-            category = "Highly Accessible";
-            status = "good";
-        } else if (minDistance <= 5) {
-            category = "Moderately Accessible";
-            status = "moderate";
-        } else {
-            category = "Poorly Accessible / Underserved";
-            status = "poor";
-        }
-        
-        const priorityScore = Math.min(1, (minDistance / 20) * 0.6 + (village.population / 50000) * 0.4);
-        
-        database.accessibilityResults.push({
-            village_id: village.id,
-            village_name: village.name,
-            nearest_school_id: nearestSchool ? nearestSchool.id : 'N/A',
-            nearest_school_name: nearestSchool ? nearestSchool.name : 'N/A',
-            distance_km: minDistance.toFixed(2),
-            travel_time_min: travelTime.toFixed(0),
-            accessibility_category: category,
-            status: status,
-            is_underserved: minDistance > 5 ? 1 : 0,
-            priority_score: priorityScore.toFixed(2),
-            population: village.population,
-            lat: village.lat,
-            lon: village.lon
-        });
-    });
-    
-    generateProposedRoads();
-    saveResultsToDesktop();
-    generateAllGeoJSON();
-    
-    console.log(`[Analysis] Complete: ${database.accessibilityResults.length} villages analyzed`);
-}
-
-function generateProposedRoads() {
-    const underserved = database.accessibilityResults.filter(r => r.is_underserved === 1);
-    underserved.sort((a, b) => parseFloat(b.priority_score) - parseFloat(a.priority_score));
-    const highPriority = underserved.slice(0, Math.min(5, underserved.length));
-    
-    database.proposedRoads = [];
-    highPriority.forEach((village, idx) => {
-        const villageData = database.villages.find(v => v.id === village.village_id);
-        const schoolData = database.schools.find(s => s.id === village.nearest_school_id);
-        
-        if (villageData && schoolData) {
-            database.proposedRoads.push({
-                road_id: `PROP_${idx + 1}`,
-                from_village: village.village_name,
-                from_lat: villageData.lat,
-                from_lon: villageData.lon,
-                to_school: schoolData.name,
-                to_lat: schoolData.lat,
-                to_lon: schoolData.lon,
-                length_km: village.distance_km,
-                priority_level: parseFloat(village.distance_km) > 10 ? 1 : 2,
-                priority_score: village.priority_score
-            });
-        }
-    });
-}
-
-function generateAllGeoJSON() {
-    console.log('\n🗺️ Generating GeoJSON map files...');
-    
-    const accessibilityFeatures = database.accessibilityResults.map(r => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [parseFloat(r.lon), parseFloat(r.lat)] },
-        properties: { 
-            village: r.village_name, 
-            category: r.accessibility_category, 
-            distance_km: parseFloat(r.distance_km),
-            travel_time_min: parseInt(r.travel_time_min),
-            priority_score: parseFloat(r.priority_score),
-            population: r.population,
-            status: r.status
-        }
-    }));
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'accessibility_map.geojson'), JSON.stringify({ type: "FeatureCollection", features: accessibilityFeatures }, null, 2));
-    
-    const underservedFeatures = database.accessibilityResults.filter(r => r.is_underserved === 1).map(r => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [parseFloat(r.lon), parseFloat(r.lat)] },
-        properties: { 
-            village: r.village_name, 
-            distance_km: parseFloat(r.distance_km),
-            priority_score: parseFloat(r.priority_score),
-            population: r.population
-        }
-    }));
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'underserved_areas.geojson'), JSON.stringify({ type: "FeatureCollection", features: underservedFeatures }, null, 2));
-    
-    const priorityFeatures = database.accessibilityResults.filter(r => r.is_underserved === 1 && parseFloat(r.priority_score) > 0.5).map(r => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [parseFloat(r.lon), parseFloat(r.lat)] },
-        properties: { 
-            village: r.village_name, 
-            priority_score: parseFloat(r.priority_score),
-            distance_km: parseFloat(r.distance_km)
-        }
-    }));
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'priority_zones.geojson'), JSON.stringify({ type: "FeatureCollection", features: priorityFeatures }, null, 2));
-    
-    const proposedRoadsFeatures = database.proposedRoads.map(r => ({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [[parseFloat(r.from_lon), parseFloat(r.from_lat)], [parseFloat(r.to_lon), parseFloat(r.to_lat)]] },
-        properties: { 
-            road_id: r.road_id,
-            from_village: r.from_village,
-            to_school: r.to_school,
-            length_km: parseFloat(r.length_km),
-            priority_level: r.priority_level
-        }
-    }));
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'proposed_roads.geojson'), JSON.stringify({ type: "FeatureCollection", features: proposedRoadsFeatures }, null, 2));
-    
-    console.log(`✅ All GeoJSON files saved to: ${OUTPUTS_PATH}`);
-}
-
-function saveResultsToDesktop() {
-    const resultsCSV = ['Village,Nearest School,Distance (km),Travel Time (min),Accessibility Category,Priority Score,Population'];
-    database.accessibilityResults.forEach(r => {
-        resultsCSV.push(`"${r.village_name}","${r.nearest_school_name}",${r.distance_km},${r.travel_time_min},"${r.accessibility_category}",${r.priority_score},${r.population}`);
-    });
-    fs.writeFileSync(path.join(OUTPUTS_PATH, 'accessibility_results.csv'), resultsCSV.join('\n'));
-    console.log(`📁 Results saved to: ${OUTPUTS_PATH}`);
-}
-
-function getStatistics() {
-    const results = database.accessibilityResults;
-    if (results.length === 0) return null;
-    
-    return {
-        total_villages: results.length,
-        underserved_count: results.filter(r => r.is_underserved === 1).length,
-        underserved_percentage: ((results.filter(r => r.is_underserved === 1).length / results.length) * 100).toFixed(1),
-        highly_accessible: results.filter(r => r.status === 'good').length,
-        moderately_accessible: results.filter(r => r.status === 'moderate').length,
-        avg_distance_km: (results.reduce((sum, r) => sum + parseFloat(r.distance_km), 0) / results.length).toFixed(2),
-        avg_travel_time_min: (results.reduce((sum, r) => sum + parseFloat(r.travel_time_min), 0) / results.length).toFixed(0)
-    };
-}
-
-// API Endpoints
-app.post('/api/location/calculate-route', async (req, res) => {
-    const { lat, lon, school_id } = req.body;
-    const school = database.schools.find(s => s.id === school_id);
-    if (!school) return res.json({ success: false, error: 'School not found' });
-    
-    // Try OSRM first for real road routing
-    const osrmRoute = await getOSRMRoute(parseFloat(lat), parseFloat(lon), school.lat, school.lon);
-    
-    if (osrmRoute.success) {
-        res.json({
-            success: true,
-            route: {
-                start: { lat: parseFloat(lat), lon: parseFloat(lon) },
-                end: { lat: school.lat, lon: school.lon },
-                school: school,
-                distance_km: osrmRoute.distance_km.toFixed(2),
-                travel_time_min: osrmRoute.travel_time_min.toFixed(0),
-                route_points: osrmRoute.route_points,
-                source: "OSRM (Open Source Routing Machine)"
-            }
-        });
-    } else {
-        // Fallback to local road network
-        const roadGraph = buildRoadGraph();
-        const localRoute = findLocalRoute(parseFloat(lat), parseFloat(lon), school.lat, school.lon, roadGraph);
-        res.json({
-            success: true,
-            route: {
-                start: { lat: parseFloat(lat), lon: parseFloat(lon) },
-                end: { lat: school.lat, lon: school.lon },
-                school: school,
-                distance_km: localRoute.distance_km.toFixed(2),
-                travel_time_min: localRoute.travel_time_min.toFixed(0),
-                route_points: localRoute.route_points,
-                source: "Local Road Network"
-            }
-        });
-    }
+app.get('/api/gis/schools',async(req,res)=>{
+  try{const rows=await A('SELECT * FROM schools');
+    res.json({type:'FeatureCollection',features:rows.map(r=>{
+      let geom=null;try{geom=r.geojson?JSON.parse(r.geojson):null;}catch{}
+      return{type:'Feature',
+        properties:{id:r.id,name:r.name,type:r.school_type,level:r.level,
+          sector:r.sector,district:r.district,lon:r.lon,lat:r.lat},
+        geometry:geom};})});}catch(e){res.status(500).json({error:e.message});}
 });
 
-app.post('/api/location/nearest-school', (req, res) => {
-    const { lat, lon } = req.body;
-    let nearestSchool = null;
-    let minDistance = Infinity;
-    database.schools.forEach(school => {
-        const distance = calculateDistance(parseFloat(lat), parseFloat(lon), school.lat, school.lon);
-        if (distance < minDistance) {
-            minDistance = distance;
-            nearestSchool = school;
-        }
-    });
-    if (nearestSchool) {
-        res.json({ success: true, nearest_school: nearestSchool, distance_km: minDistance.toFixed(2), travel_time_min: (minDistance / 30 * 60).toFixed(0) });
-    } else {
-        res.json({ success: false, error: 'No schools found' });
-    }
+app.get('/api/gis/roads',async(req,res)=>{
+  try{const rows=await A('SELECT * FROM roads');
+    res.json({type:'FeatureCollection',features:rows.map(r=>{
+      let geom=null;try{geom=r.geojson?JSON.parse(r.geojson):null;}catch{}
+      return{type:'Feature',
+        properties:{id:r.id,type:r.road_type,class:r.road_class,
+          settlement:r.settlement,status:r.status,surface:r.surface,
+          seasonal:r.seasonal,length_m:r.length_m},
+        geometry:geom};})});}catch(e){res.status(500).json({error:e.message});}
 });
 
-app.get('/api/location/schools-list', (req, res) => {
-    res.json({ success: true, schools: database.schools });
+app.get('/api/gis/districts',async(req,res)=>{try{res.json(fc(await A('SELECT * FROM districts')));}catch(e){res.status(500).json({error:e.message});}});
+
+app.get('/api/gis/sectors',async(req,res)=>{
+  try{const rows=await A('SELECT * FROM sectors');
+    res.json({type:'FeatureCollection',features:rows.map(r=>{
+      let geom=null;try{geom=r.geojson?JSON.parse(r.geojson):null;}catch{}
+      return{type:'Feature',
+        properties:{id:r.id,name:r.name,district:r.district,
+          province:r.province,area_sqkm:r.area_sqkm,lon:r.lon,lat:r.lat},
+        geometry:geom};})});}catch(e){res.status(500).json({error:e.message});}
 });
 
-app.get('/api/results', (req, res) => {
-    res.json({ 
-        accessibility: database.accessibilityResults, 
-        proposed_roads: database.proposedRoads, 
-        statistics: getStatistics(),
-        schools: database.schools,
-        villages: database.villages,
-        roads: database.roads
-    });
+app.get('/api/gis/accessibility',async(req,res)=>{
+  try{const rows=await A('SELECT * FROM accessibility_results ORDER BY accessibility_score ASC');
+    res.json({type:'FeatureCollection',
+      metadata:{total:rows.length,
+        highly:rows.filter(r=>r.accessibility_class==='Highly Accessible').length,
+        moderate:rows.filter(r=>r.accessibility_class==='Moderately Accessible').length,
+        underserved:rows.filter(r=>r.accessibility_class==='Underserved').length},
+      features:rows.map(r=>{let g=null;try{g=r.geojson?JSON.parse(r.geojson):null;}catch{}
+        return{type:'Feature',properties:r,geometry:g};})});}
+  catch(e){res.status(500).json({error:e.message});}
 });
 
-app.get('/api/geojson/:name', (req, res) => {
-    const filePath = path.join(OUTPUTS_PATH, `${req.params.name}.geojson`);
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
-    } else {
-        res.status(404).json({ error: 'File not found' });
-    }
+app.get('/api/gis/underserved',async(req,res)=>{
+  try{res.json(fc(await A(`SELECT * FROM accessibility_results
+    WHERE accessibility_class IN ('Underserved','Moderately Accessible')
+    ORDER BY accessibility_score`)));}catch(e){res.status(500).json({error:e.message});}
 });
 
-app.get('/api/data-status', (req, res) => {
-    res.json({
-        schools: database.schools.length,
-        villages: database.villages.length,
-        roads: database.roads.length,
-        results: database.accessibilityResults.length,
-        data_source_path: DATA_PATH
-    });
+app.get('/api/gis/proposed-roads',async(req,res)=>{
+  try{res.json(fc(await A('SELECT * FROM proposed_roads ORDER BY priority')));}
+  catch(e){res.status(500).json({error:e.message});}
 });
 
-app.use(express.static('public'));
-
-// Initialize
-loadDataFromDesktop();
-analyzeAccessibility();
-
-app.listen(PORT, () => {
-    console.log('\n============================================================');
-    console.log(' SCHOOL ACCESSIBILITY ANALYSIS SYSTEM');
-    console.log('============================================================');
-    console.log(` Server: http://localhost:${PORT}`);
-    console.log(` Dashboard: http://localhost:${PORT}`);
-    console.log(` Data source: ${DATA_PATH}`);
-    console.log('============================================================');
-    console.log('\n🗺️ Routing Features:');
-    console.log('   • OSRM (Open Source Routing Machine) for real road routing');
-    console.log('   • Orange route lines following actual roads');
-    console.log('   • Automatic map zoom to show full route');
-    console.log('   • Accurate distance and travel time calculation');
-    console.log('============================================================\n');
+app.get('/api/gis/service-areas',async(req,res)=>{
+  try{const radius=req.query.radius?+req.query.radius:3;
+    res.json(fc(await A('SELECT * FROM service_areas WHERE radius_km=?',[radius])));}
+  catch(e){res.status(500).json({error:e.message});}
 });
+
+app.get('/api/gis/study-area',async(req,res)=>{
+  try{res.json(fc(await A('SELECT * FROM study_area')));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/network/stats',async(req,res)=>{
+  try{const rl=await G('SELECT ROUND(SUM(length_m)/1000,1) km FROM roads');
+    const paved=await G("SELECT COUNT(*) c FROM roads WHERE status LIKE '%pav%'");
+    const rural=await G("SELECT COUNT(*) c FROM roads WHERE settlement='Rural'");
+    res.json({nodes:5881,totalRoadKm:rl?.km||0,pavedCount:paved?.c||0,ruralCount:rural?.c||0});}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/gis/nearest-school',async(req,res)=>{
+  const{lon,lat}=req.query;
+  if(!lon||!lat) return res.status(400).json({error:'lon and lat required'});
+  try{const schools=await A('SELECT * FROM schools WHERE lon IS NOT NULL');
+    const r=nearestSchoolSL(+lon,+lat,schools);
+    res.json({school:r?.school,distance_km:r?.distKm?.toFixed(3)});}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/gis/analyze',async(req,res)=>{
+  try{const data=await analyse();
+    res.json({success:true,sectors:data.results.length,proposed:data.proposed.length});}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/health',async(req,res)=>{
+  try{const counts={};
+    for(const t of['schools','roads','sectors','districts','proposed_roads','service_areas']){
+      const r=await G(`SELECT COUNT(*) c FROM ${t}`);counts[t]=r?.c||0;}
+    res.json({status:'ok',counts});}catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/',(req,res)=>{
+  const idx=path.join(__dirname,'public','index.html');
+  if(fs2.existsSync(idx)) return res.sendFile(idx);
+  res.send('<h2>Rwanda School Accessibility API</h2>');
+});
+
+// ── START ─────────────────────────────────────────────────────────────
+async function start(){
+  console.log('\u2554'+'\u2550'.repeat(60)+'\u2557');
+  console.log('\u2551  Rwanda School Accessibility \u2014 GIS Platform v4          \u2551');
+  console.log('\u255a'+'\u2550'.repeat(60)+'\u255d');
+  getDB();
+  const counts={};
+  for(const t of['schools','roads','sectors','districts']){
+    const r=await G(`SELECT COUNT(*) c FROM ${t}`).catch(()=>({c:0}));
+    counts[t]=r?.c||0;
+  }
+  console.log('\n\uD83D\uDCCA Database:');
+  for(const[t,c] of Object.entries(counts)) console.log('  ',t.padEnd(12)+':',c);
+
+  if(counts.schools>0&&counts.roads>0){
+    console.log('\n\uD83D\uDD0D Running accessibility analysis...');
+    try{
+      const data=await analyse();
+      const H=data.results.filter(r=>r.accessibility_class==='Highly Accessible').length;
+      const M=data.results.filter(r=>r.accessibility_class==='Moderately Accessible').length;
+      const U=data.results.filter(r=>r.accessibility_class==='Underserved').length;
+      console.log('\n\uD83D\uDCCA Results:');
+      console.log('  \u2705 Sectors:          ',data.results.length);
+      console.log('  \uD83D\uDFE2 Highly Accessible:',H);
+      console.log('  \uD83D\uDFE1 Moderately:       ',M);
+      console.log('  \uD83D\uDD34 Underserved:      ',U);
+      console.log('  \uD83D\uDEE3\uFE0F Proposed Roads:  ',data.proposed.length);
+      data.results.forEach(r=>console.log('    -',r.sector_name,
+        `[${r.accessibility_class}] score:${r.accessibility_score} dist:${r.distance_km}km travel:${r.travel_time_minutes}min`));
+    }catch(e){console.warn('  Analysis error:',e.message);}
+  }
+
+  app.listen(PORT,()=>{
+    console.log('\n\uD83D\uDDFA\uFE0F  http://localhost:'+PORT);
+    console.log('  /api/gis/schools  /api/gis/roads  /api/gis/accessibility');
+    console.log('  /api/gis/proposed-roads  /api/gis/service-areas');
+  });
+}
+start().catch(e=>{console.error('\u274C',e.message);process.exit(1);});

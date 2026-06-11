@@ -1,0 +1,407 @@
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { parse } = require('csv-parse/sync');
+const sqlite3 = require('sqlite3').verbose();
+const shapefile = require('shapefile');
+
+const app = express();
+const PORT = process.env.PORT || 1111;
+
+const DESKTOP_PATH = path.join(os.homedir(), 'Desktop', 'School_Accessibility_Data');
+const OUTPUTS_PATH = path.join(DESKTOP_PATH, 'outputs');
+const DATA_PATH = path.join(os.homedir(), 'Desktop', 'DATA');
+const DB_PATH = path.join(DESKTOP_PATH, 'gis_database.db');
+const SHAPEFILE_PATH = path.join(DESKTOP_PATH, 'shapefiles');
+
+[DESKTOP_PATH, OUTPUTS_PATH, SHAPEFILE_PATH].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+console.log(`\n╔════════════════════════════════════════════════════════════════════╗`);
+console.log(`║     GIS Pipeline: Shapefile → Database → Leaflet                  ║`);
+console.log(`╚════════════════════════════════════════════════════════════════════╝`);
+console.log(`\n📁 Data source: ${DATA_PATH}`);
+console.log(`🗄️ Database: ${DB_PATH}`);
+
+app.use(express.json());
+app.use(express.static('public'));
+
+const db = new sqlite3.Database(DB_PATH);
+
+// Create tables
+db.serialize(() => {
+    db.run(`DROP TABLE IF EXISTS schools`);
+    db.run(`DROP TABLE IF EXISTS sectors`);
+    db.run(`DROP TABLE IF EXISTS roads`);
+    
+    db.run(`CREATE TABLE schools (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        lat REAL,
+        lon REAL,
+        type TEXT,
+        source_file TEXT
+    )`);
+    
+    db.run(`CREATE TABLE sectors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        lat REAL,
+        lon REAL,
+        population INTEGER,
+        source_file TEXT
+    )`);
+    
+    db.run(`CREATE TABLE roads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        type TEXT,
+        coordinates TEXT,
+        source_file TEXT
+    )`);
+    
+    console.log('✅ Database ready');
+});
+
+function calculateDistance(x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    return Math.sqrt(dx * dx + dy * dy) / 1000;
+}
+
+// Parse shapefile and extract all data
+async function parseAndLoadShapefile(shpPath, sourceName) {
+    return new Promise(async (resolve) => {
+        try {
+            const source = await shapefile.open(shpPath);
+            const features = [];
+            let result;
+            
+            while (true) {
+                result = await source.read();
+                if (result.done) break;
+                if (result.value) {
+                    features.push(result.value);
+                }
+            }
+            
+            console.log(`   📍 Found ${features.length} features in ${sourceName}`);
+            
+            let pointsCount = 0;
+            let linesCount = 0;
+            let polygonsCount = 0;
+            
+            for (const feature of features) {
+                const geom = feature.geometry;
+                const props = feature.properties;
+                
+                if (geom.type === 'Point') {
+                    const lon = geom.coordinates[0];
+                    const lat = geom.coordinates[1];
+                    const name = props.NAME || props.name || props.School || props.school || `Feature_${pointsCount}`;
+                    
+                    db.run(`INSERT INTO schools (name, lat, lon, type, source_file) VALUES (?, ?, ?, ?, ?)`,
+                        [name, lat, lon, 'point', sourceName]);
+                    pointsCount++;
+                }
+                else if (geom.type === 'LineString') {
+                    const coords = geom.coordinates;
+                    const name = props.NAME || props.name || props.Road || props.road || `Road_${linesCount}`;
+                    const roadType = props.TYPE || props.type || props.Class || 'unknown';
+                    
+                    db.run(`INSERT INTO roads (name, type, coordinates, source_file) VALUES (?, ?, ?, ?)`,
+                        [name, roadType, JSON.stringify(coords), sourceName]);
+                    linesCount++;
+                }
+                else if (geom.type === 'Polygon') {
+                    const centroid = geom.coordinates[0].reduce((sum, coord) => [sum[0] + coord[0], sum[1] + coord[1]], [0, 0]);
+                    const lon = centroid[0] / geom.coordinates[0].length;
+                    const lat = centroid[1] / geom.coordinates[0].length;
+                    const name = props.NAME || props.name || props.District || props.district || `Area_${polygonsCount}`;
+                    const population = parseInt(props.POPULATION) || parseInt(props.population) || 5000;
+                    
+                    db.run(`INSERT INTO sectors (name, lat, lon, population, source_file) VALUES (?, ?, ?, ?, ?)`,
+                        [name, lat, lon, population, sourceName]);
+                    polygonsCount++;
+                }
+            }
+            
+            console.log(`      ✅ Points: ${pointsCount}, Lines: ${linesCount}, Polygons: ${polygonsCount}`);
+            resolve({ points: pointsCount, lines: linesCount, polygons: polygonsCount });
+        } catch (err) {
+            console.log(`   ❌ Error parsing ${sourceName}: ${err.message}`);
+            resolve({ points: 0, lines: 0, polygons: 0 });
+        }
+    });
+}
+
+// Load all shapefiles
+async function loadAllShapefiles() {
+    console.log('\n📂 Loading shapefiles from Desktop/DATA folder...');
+    
+    const files = fs.readdirSync(DATA_PATH);
+    const shpFiles = files.filter(f => f.toLowerCase().endsWith('.shp'));
+    
+    console.log(`\n📄 Found ${shpFiles.length} shapefile(s):`);
+    
+    let totalPoints = 0;
+    let totalLines = 0;
+    let totalPolygons = 0;
+    
+    for (const shpFile of shpFiles) {
+        const shpPath = path.join(DATA_PATH, shpFile);
+        const name = path.basename(shpFile, '.shp');
+        console.log(`\n📄 Processing: ${shpFile}`);
+        
+        const result = await parseAndLoadShapefile(shpPath, name);
+        totalPoints += result.points;
+        totalLines += result.lines;
+        totalPolygons += result.polygons;
+    }
+    
+    console.log(`\n📊 TOTAL DATA EXTRACTED:`);
+    console.log(`   🏫 Points (Schools/Sites): ${totalPoints}`);
+    console.log(`   🛣️ Lines (Roads): ${totalLines}`);
+    console.log(`   🏘️ Polygons (Sectors/Areas): ${totalPolygons}`);
+    
+    // If no data extracted, load sample data
+    if (totalPoints === 0 && totalLines === 0 && totalPolygons === 0) {
+        console.log(`\n⚠️ No data extracted from shapefiles. Loading sample data...`);
+        await loadSampleData();
+    }
+    
+    return { points: totalPoints, lines: totalLines, polygons: totalPolygons };
+}
+
+// Load sample data
+function loadSampleData() {
+    return new Promise((resolve) => {
+        console.log('\n📝 Loading Musanze sample data...');
+        
+        const schools = [
+            ['G.S. Musanze', -1.4950, 29.6350, 'school', 'sample'],
+            ['Ecole Secondaire Cyuve', -1.4800, 29.6200, 'school', 'sample'],
+            ['College Shingiro', -1.5100, 29.6500, 'school', 'sample'],
+            ['G.S. Kinigi', -1.4700, 29.6100, 'school', 'sample'],
+            ['Lycee Nyange', -1.5200, 29.6600, 'school', 'sample']
+        ];
+        
+        const sectors = [
+            ['Musanze Sector', -1.4950, 29.6350, 45000, 'sample'],
+            ['Cyuve Sector', -1.4800, 29.6200, 12000, 'sample'],
+            ['Shingiro Sector', -1.5100, 29.6500, 8000, 'sample'],
+            ['Kinigi Sector', -1.4700, 29.6100, 15000, 'sample'],
+            ['Nyange Sector', -1.5200, 29.6600, 6000, 'sample']
+        ];
+        
+        const roads = [
+            ['Primary Road 1', 'primary', JSON.stringify([[[29.635, -1.495], [29.62, -1.48]]]), 'sample'],
+            ['Primary Road 2', 'primary', JSON.stringify([[[29.635, -1.495], [29.65, -1.51]]]), 'sample'],
+            ['Secondary Road 1', 'secondary', JSON.stringify([[[29.62, -1.48], [29.61, -1.47]]]), 'sample']
+        ];
+        
+        const insertSchool = db.prepare(`INSERT INTO schools (name, lat, lon, type, source_file) VALUES (?, ?, ?, ?, ?)`);
+        schools.forEach(s => insertSchool.run(s[0], s[1], s[2], s[3], s[4]));
+        
+        const insertSector = db.prepare(`INSERT INTO sectors (name, lat, lon, population, source_file) VALUES (?, ?, ?, ?, ?)`);
+        sectors.forEach(s => insertSector.run(s[0], s[1], s[2], s[3], s[4]));
+        
+        const insertRoad = db.prepare(`INSERT INTO roads (name, type, coordinates, source_file) VALUES (?, ?, ?, ?)`);
+        roads.forEach(r => insertRoad.run(r[0], r[1], r[2], r[3]));
+        
+        console.log('   ✅ Loaded sample data');
+        resolve();
+    });
+}
+
+// Generate GeoJSON from database
+function generateGeoJSON(type) {
+    return new Promise((resolve) => {
+        if (type === 'schools') {
+            db.all('SELECT * FROM schools', (err, rows) => {
+                const features = rows.map(s => ({
+                    type: "Feature",
+                    geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+                    properties: { name: s.name, type: s.type, source: s.source_file }
+                }));
+                resolve({ type: "FeatureCollection", features: features });
+            });
+        } else if (type === 'sectors') {
+            db.all('SELECT * FROM sectors', (err, rows) => {
+                const features = rows.map(s => ({
+                    type: "Feature",
+                    geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+                    properties: { name: s.name, population: s.population, source: s.source_file }
+                }));
+                resolve({ type: "FeatureCollection", features: features });
+            });
+        } else if (type === 'roads') {
+            db.all('SELECT * FROM roads', (err, rows) => {
+                const features = rows.map(r => {
+                    let coords = [];
+                    try {
+                        coords = JSON.parse(r.coordinates);
+                    } catch(e) {
+                        coords = [];
+                    }
+                    return {
+                        type: "Feature",
+                        geometry: { type: "LineString", coordinates: coords },
+                        properties: { name: r.name, type: r.type, source: r.source_file }
+                    };
+                });
+                resolve({ type: "FeatureCollection", features: features });
+            });
+        } else {
+            resolve({ type: "FeatureCollection", features: [] });
+        }
+    });
+}
+
+// Save GeoJSON
+async function saveGeoJSON() {
+    const schools = await generateGeoJSON('schools');
+    const sectors = await generateGeoJSON('sectors');
+    const roads = await generateGeoJSON('roads');
+    
+    fs.writeFileSync(path.join(OUTPUTS_PATH, 'schools.geojson'), JSON.stringify(schools, null, 2));
+    fs.writeFileSync(path.join(OUTPUTS_PATH, 'sectors.geojson'), JSON.stringify(sectors, null, 2));
+    fs.writeFileSync(path.join(OUTPUTS_PATH, 'roads.geojson'), JSON.stringify(roads, null, 2));
+    
+    console.log(`\n✅ GeoJSON files saved to ${OUTPUTS_PATH}`);
+}
+
+// Run accessibility analysis
+async function runAnalysis() {
+    const sectors = await new Promise(r => db.all('SELECT * FROM sectors', (e, rows) => r(rows || [])));
+    const schools = await new Promise(r => db.all('SELECT * FROM schools', (e, rows) => r(rows || [])));
+    
+    if (sectors.length === 0 || schools.length === 0) {
+        return { stats: { total_sectors: 0, highly_accessible: 0, moderately_accessible: 0, underserved_count: 0 } };
+    }
+    
+    const results = sectors.map(sector => {
+        let nearest = null;
+        let minDist = Infinity;
+        schools.forEach(school => {
+            const dist = calculateDistance(sector.lat, sector.lon, school.lat, school.lon);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = school;
+            }
+        });
+        
+        let category;
+        if (minDist <= 2) category = "Highly Accessible";
+        else if (minDist <= 5) category = "Moderately Accessible";
+        else category = "Poorly Accessible";
+        
+        return {
+            sector_name: sector.name,
+            nearest_school: nearest?.name || 'N/A',
+            distance_km: minDist.toFixed(2),
+            travel_time_min: (minDist / 30 * 60).toFixed(0),
+            category: category,
+            population: sector.population
+        };
+    });
+    
+    const stats = {
+        total_sectors: results.length,
+        underserved_count: results.filter(r => r.category === 'Poorly Accessible').length,
+        highly_accessible: results.filter(r => r.category === 'Highly Accessible').length,
+        moderately_accessible: results.filter(r => r.category === 'Moderately Accessible').length,
+        avg_distance_km: (results.reduce((s, r) => s + parseFloat(r.distance_km), 0) / results.length || 0).toFixed(2),
+        avg_travel_time_min: (results.reduce((s, r) => s + parseFloat(r.travel_time_min), 0) / results.length || 0).toFixed(0)
+    };
+    
+    console.log(`\n📊 ANALYSIS RESULTS:`);
+    console.log(`   ✅ Total Sectors: ${stats.total_sectors}`);
+    console.log(`   🟢 Highly Accessible: ${stats.highly_accessible}`);
+    console.log(`   🟡 Moderately Accessible: ${stats.moderately_accessible}`);
+    console.log(`   🔴 Underserved: ${stats.underserved_count}`);
+    
+    return { stats };
+}
+
+// API Endpoints
+app.get('/api/data-status', async (req, res) => {
+    const schools = await new Promise(r => db.get('SELECT COUNT(*) as c FROM schools', (e, row) => r(row?.c || 0)));
+    const sectors = await new Promise(r => db.get('SELECT COUNT(*) as c FROM sectors', (e, row) => r(row?.c || 0)));
+    const roads = await new Promise(r => db.get('SELECT COUNT(*) as c FROM roads', (e, row) => r(row?.c || 0)));
+    res.json({ schools: schools || 0, sectors: sectors || 0, roads: roads || 0 });
+});
+
+app.get('/api/geojson/:type', async (req, res) => {
+    const geojson = await generateGeoJSON(req.params.type);
+    res.json(geojson);
+});
+
+app.get('/api/results', async (req, res) => {
+    const sectors = await new Promise(r => db.all('SELECT * FROM sectors', (e, rows) => r(rows || [])));
+    const schools = await new Promise(r => db.all('SELECT * FROM schools', (e, rows) => r(rows || [])));
+    
+    const results = sectors.map(sector => {
+        let nearest = null;
+        let minDist = Infinity;
+        schools.forEach(school => {
+            const dist = calculateDistance(sector.lat, sector.lon, school.lat, school.lon);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = school;
+            }
+        });
+        
+        let category;
+        if (minDist <= 2) category = "Highly Accessible";
+        else if (minDist <= 5) category = "Moderately Accessible";
+        else category = "Poorly Accessible";
+        
+        return {
+            sector_name: sector.name,
+            nearest_school: nearest?.name || 'N/A',
+            distance_km: minDist.toFixed(2),
+            travel_time_min: (minDist / 30 * 60).toFixed(0),
+            category: category,
+            population: sector.population,
+            lat: sector.lat,
+            lon: sector.lon
+        };
+    });
+    
+    const stats = {
+        total_sectors: results.length,
+        underserved_count: results.filter(r => r.category === 'Poorly Accessible').length,
+        highly_accessible: results.filter(r => r.category === 'Highly Accessible').length,
+        moderately_accessible: results.filter(r => r.category === 'Moderately Accessible').length,
+        avg_distance_km: (results.reduce((s, r) => s + parseFloat(r.distance_km), 0) / results.length || 0).toFixed(2),
+        avg_travel_time_min: (results.reduce((s, r) => s + parseFloat(r.travel_time_min), 0) / results.length || 0).toFixed(0)
+    };
+    
+    res.json({ accessibility: results, statistics: stats });
+});
+
+app.post('/api/analyze', async (req, res) => {
+    await runAnalysis();
+    res.json({ success: true });
+});
+
+app.use(express.static('public'));
+
+// Initialize
+async function init() {
+    await loadAllShapefiles();
+    await saveGeoJSON();
+    await runAnalysis();
+}
+
+init();
+
+app.listen(PORT, () => {
+    console.log(`\n╔════════════════════════════════════════════════════════════════════╗`);
+    console.log(`║     GIS PIPELINE ACTIVE                                            ║`);
+    console.log(`║     http://localhost:${PORT}                                      ║`);
+    console.log(`╚════════════════════════════════════════════════════════════════════╝`);
+});

@@ -1,0 +1,412 @@
+'use strict';
+
+require('dotenv').config();
+const express  = require('express');
+const cors     = require('cors');
+const path     = require('path');
+const fs       = require('fs');
+const sqlite3  = require('sqlite3').verbose();
+
+const app  = express();
+const PORT = process.env.PORT || 1111;
+
+const DB_PATH = path.join(process.env.HOME,
+  'Desktop/School_Accessibility_Data/spatial_gis.db');
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ── DB helpers ────────────────────────────────────────────────────────
+let _db = null;
+function getDB() {
+  if (_db) return _db;
+  if (!fs.existsSync(DB_PATH))
+    throw new Error('Database not found. Run: node build_database.js');
+  _db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE);
+  return _db;
+}
+function dbAll(sql, p = []) {
+  return new Promise((res, rej) =>
+    getDB().all(sql, p, (e, rows) => e ? rej(e) : res(rows || [])));
+}
+function dbGet(sql, p = []) {
+  return new Promise((res, rej) =>
+    getDB().get(sql, p, (e, row) => e ? rej(e) : res(row || null)));
+}
+function dbRun(sql, p = []) {
+  return new Promise((res, rej) =>
+    getDB().run(sql, p, function(e) { e ? rej(e) : res(this); }));
+}
+
+// ── Haversine distance (km) ───────────────────────────────────────────
+function haversine(lon1, lat1, lon2, lat2) {
+  const R  = 6371;
+  const dL = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a  = Math.sin(dL/2)**2 +
+             Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dl/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── Point-in-polygon (ray casting) ───────────────────────────────────
+function pointInPolygon(lon, lat, polygon) {
+  try {
+    const rings = polygon.type === 'MultiPolygon'
+      ? polygon.coordinates[0] : polygon.coordinates;
+    const ring = rings[0];
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      if (((yi > lat) !== (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi))
+        inside = !inside;
+    }
+    return inside;
+  } catch { return false; }
+}
+
+// ── Road density for a sector ─────────────────────────────────────────
+function roadsInSector(roads, sectorGeojson) {
+  const sg = JSON.parse(sectorGeojson);
+  let totalLen = 0, count = 0;
+  for (const road of roads) {
+    if (!road.lon || !road.lat) continue;
+    if (pointInPolygon(road.lon, road.lat, sg)) {
+      totalLen += road.length_m || 0;
+      count++;
+    }
+  }
+  return { count, totalKm: +(totalLen / 1000).toFixed(2) };
+}
+
+// ── Core accessibility analysis ───────────────────────────────────────
+async function runAnalysis() {
+  const sectors = await dbAll(`SELECT * FROM sectors`);
+  const schools = await dbAll(`SELECT * FROM schools`);
+  const roads   = await dbAll(`SELECT * FROM roads`);
+
+  if (!sectors.length) throw new Error('No sectors in database. Run: node build_database.js');
+  if (!schools.length) throw new Error('No schools in database. Run: node build_database.js');
+
+  await dbRun('DELETE FROM accessibility_results');
+
+  const results = [];
+
+  for (const sector of sectors) {
+    const cx = sector.lon;
+    const cy = sector.lat;
+    if (!cx || !cy) continue;
+
+    // Find nearest school
+    let nearest = null, minDist = Infinity;
+    for (const sch of schools) {
+      if (!sch.lon || !sch.lat) continue;
+      const d = haversine(cx, cy, sch.lon, sch.lat);
+      if (d < minDist) { minDist = d; nearest = sch; }
+    }
+
+    // Schools within 3km
+    const schoolsNearby = schools.filter(s =>
+      s.lon && s.lat && haversine(cx, cy, s.lon, s.lat) <= 3).length;
+
+    // Road stats
+    const roadStats = sector.geojson
+      ? roadsInSector(roads, sector.geojson)
+      : { count: 0, totalKm: 0 };
+
+    const distKm   = +minDist.toFixed(3);
+    const distM    = distKm * 1000;
+    const areaSqkm = sector.area_sqkm || 1;
+    const roadDen  = roadStats.totalKm / areaSqkm;
+
+    // Travel time at 30 km/h rural road speed
+    const travelMin = +(distKm / 30 * 60).toFixed(1);
+
+    // Scores (0–100)
+    // Distance: 100 if ≤0.5km, 0 if ≥10km
+    const distScore   = +Math.max(0, Math.min(100, 100 - ((distM - 500) / 9500) * 100)).toFixed(1);
+    // Road density: normalized at 2 km/km²
+    const roadScore   = +Math.min(100, (roadDen / 2) * 100).toFixed(1);
+    // School coverage: 25 pts per school within 3km, max 100
+    const schoolScore = +Math.min(100, schoolsNearby * 25).toFixed(1);
+
+    // Weighted composite
+    const accessScore = +(distScore*0.50 + roadScore*0.30 + schoolScore*0.20).toFixed(1);
+
+    const accessClass =
+      accessScore >= 65 ? 'Highly Accessible' :
+      accessScore >= 35 ? 'Moderately Accessible' : 'Underserved';
+
+    await dbRun(`
+      INSERT INTO accessibility_results (
+        sector_id, sector_name,
+        nearest_school_id, nearest_school_name,
+        distance_to_nearest_school, distance_km, travel_time_minutes,
+        road_connectivity_score, road_density,
+        school_count_in_radius, accessibility_score, accessibility_class,
+        dist_score, road_score, school_score,
+        road_count, total_road_km,
+        centroid_lon, centroid_lat,
+        method, notes, geojson
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `, [
+      sector.id, sector.name,
+      nearest?.id, nearest?.name,
+      distM, distKm, travelMin,
+      roadScore, +(roadDen).toFixed(4),
+      schoolsNearby, accessScore, accessClass,
+      distScore, roadScore, schoolScore,
+      roadStats.count, roadStats.totalKm,
+      cx, cy,
+      'haversine',
+      `Dist:${distScore} Road:${roadScore} School:${schoolScore}`,
+      sector.geojson,
+    ]);
+
+    results.push({
+      sector_id: sector.id, sector_name: sector.name,
+      nearest_school_name: nearest?.name, distance_km: distKm,
+      travel_time_minutes: travelMin, accessibility_class: accessClass,
+      accessibility_score: accessScore,
+    });
+  }
+
+  return results;
+}
+
+// ── API: stats ────────────────────────────────────────────────────────
+app.get('/api/gis/stats', async (req, res) => {
+  try {
+    const [sc, rd, sec, dist] = await Promise.all([
+      dbGet('SELECT COUNT(*) AS cnt FROM schools'),
+      dbGet('SELECT COUNT(*) AS cnt FROM roads'),
+      dbGet('SELECT COUNT(*) AS cnt FROM sectors'),
+      dbGet('SELECT COUNT(*) AS cnt FROM districts'),
+    ]);
+    const roadLen = await dbGet(
+      'SELECT ROUND(SUM(length_m)/1000,1) AS km FROM roads');
+    let acc = { highly:0, moderate:0, underserved:0 };
+    try {
+      const r = await dbGet(`
+        SELECT
+          SUM(CASE WHEN accessibility_class='Highly Accessible'     THEN 1 ELSE 0 END) AS highly,
+          SUM(CASE WHEN accessibility_class='Moderately Accessible' THEN 1 ELSE 0 END) AS moderate,
+          SUM(CASE WHEN accessibility_class='Underserved'           THEN 1 ELSE 0 END) AS underserved
+        FROM accessibility_results`);
+      if (r) acc = r;
+    } catch {}
+    res.json({
+      schools:   sc?.cnt  || 0,
+      roads:     rd?.cnt  || 0,
+      sectors:   sec?.cnt || 0,
+      districts: dist?.cnt|| 0,
+      roadLengthKm: roadLen?.km || 0,
+      accessibility: acc,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: schools GeoJSON ──────────────────────────────────────────────
+app.get('/api/gis/schools', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM schools');
+    res.json({
+      type: 'FeatureCollection',
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: { id:r.id, name:r.name, type:r.school_type,
+                      capacity:r.capacity, lon:r.lon, lat:r.lat },
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: roads GeoJSON ────────────────────────────────────────────────
+app.get('/api/gis/roads', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM roads');
+    res.json({
+      type: 'FeatureCollection',
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: { id:r.id, type:r.road_type, name:r.road_name,
+                      surface:r.surface, length_m:r.length_m },
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: districts GeoJSON ────────────────────────────────────────────
+app.get('/api/gis/districts', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM districts');
+    res.json({
+      type: 'FeatureCollection',
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: { id:r.id, name:r.name, area_sqkm:r.area_sqkm },
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: sectors GeoJSON ──────────────────────────────────────────────
+app.get('/api/gis/sectors', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM sectors');
+    res.json({
+      type: 'FeatureCollection',
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: { id:r.id, name:r.name, area_sqkm:r.area_sqkm,
+                      lon:r.lon, lat:r.lat },
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: accessibility results ────────────────────────────────────────
+app.get('/api/gis/accessibility', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM accessibility_results ORDER BY accessibility_score ASC');
+    res.json({
+      type: 'FeatureCollection',
+      metadata: {
+        total:       rows.length,
+        highly:      rows.filter(r => r.accessibility_class === 'Highly Accessible').length,
+        moderate:    rows.filter(r => r.accessibility_class === 'Moderately Accessible').length,
+        underserved: rows.filter(r => r.accessibility_class === 'Underserved').length,
+      },
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: r,
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: underserved areas ────────────────────────────────────────────
+app.get('/api/gis/underserved', async (req, res) => {
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM accessibility_results
+       WHERE accessibility_class IN ('Underserved','Moderately Accessible')
+       ORDER BY accessibility_score ASC`);
+    res.json({
+      type: 'FeatureCollection',
+      features: rows.map(r => ({
+        type: 'Feature',
+        properties: r,
+        geometry: r.geojson ? JSON.parse(r.geojson) : null,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: run analysis ─────────────────────────────────────────────────
+app.post('/api/gis/analyze', async (req, res) => {
+  try {
+    const results = await runAnalysis();
+    res.json({ success: true, count: results.length, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: nearest school ───────────────────────────────────────────────
+app.get('/api/gis/nearest-school', async (req, res) => {
+  const { lon, lat } = req.query;
+  if (!lon || !lat) return res.status(400).json({ error: 'lon and lat required' });
+  try {
+    const schools = await dbAll('SELECT * FROM schools WHERE lon IS NOT NULL');
+    let nearest = null, minDist = Infinity;
+    for (const s of schools) {
+      const d = haversine(+lon, +lat, s.lon, s.lat);
+      if (d < minDist) { minDist = d; nearest = s; }
+    }
+    res.json({ ...nearest, distance_km: +minDist.toFixed(3) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── API: health ───────────────────────────────────────────────────────
+app.get('/api/health', async (req, res) => {
+  try {
+    const counts = {};
+    for (const t of ['schools','roads','sectors','districts']) {
+      const r = await dbGet(`SELECT COUNT(*) AS c FROM ${t}`);
+      counts[t] = r?.c || 0;
+    }
+    res.json({ status: 'ok', counts });
+  } catch (e) { res.status(500).json({ status: 'error', error: e.message }); }
+});
+
+// ── Serve frontend ────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  const idx = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(idx)) return res.sendFile(idx);
+  res.send(`<h2>Rwanda School Accessibility API</h2>
+    <ul>
+      <li><a href="/api/gis/stats">/api/gis/stats</a></li>
+      <li><a href="/api/gis/schools">/api/gis/schools</a></li>
+      <li><a href="/api/gis/roads">/api/gis/roads</a></li>
+      <li><a href="/api/gis/sectors">/api/gis/sectors</a></li>
+      <li><a href="/api/gis/accessibility">/api/gis/accessibility</a></li>
+      <li><a href="/api/gis/underserved">/api/gis/underserved</a></li>
+    </ul>`);
+});
+
+// ── Start ─────────────────────────────────────────────────────────────
+async function start() {
+  console.log('╔════════════════════════════════════════════════════════════╗');
+  console.log('║     Rwanda School Accessibility — GIS Platform             ║');
+  console.log('╚════════════════════════════════════════════════════════════╝');
+
+  getDB();
+
+  const counts = {};
+  for (const t of ['schools','roads','sectors','districts']) {
+    const r = await dbGet(`SELECT COUNT(*) AS c FROM ${t}`).catch(() => ({c:0}));
+    counts[t] = r?.c || 0;
+  }
+
+  console.log('\n📊 Database:');
+  for (const [t, c] of Object.entries(counts))
+    console.log(`   ${t.padEnd(12)}: ${c}`);
+
+  if (counts.schools === 0 || counts.roads === 0) {
+    console.log('\n⚠️  Database empty! Run: node build_database.js');
+  } else {
+    console.log('\n🔍 Running accessibility analysis...');
+    try {
+      const results = await runAnalysis();
+      const highly      = results.filter(r => r.accessibility_class === 'Highly Accessible').length;
+      const moderate    = results.filter(r => r.accessibility_class === 'Moderately Accessible').length;
+      const underserved = results.filter(r => r.accessibility_class === 'Underserved').length;
+      console.log(`\n📊 Analysis Results:`);
+      console.log(`   ✅ Total Sectors:         ${results.length}`);
+      console.log(`   🟢 Highly Accessible:     ${highly}`);
+      console.log(`   🟡 Moderately Accessible: ${moderate}`);
+      console.log(`   🔴 Underserved:           ${underserved}`);
+    } catch (e) {
+      console.warn('   ⚠️  Analysis error:', e.message);
+    }
+  }
+
+  app.listen(PORT, () => {
+    console.log(`\n╔════════════════════════════════════════════════════════════╗`);
+    console.log(`║  🗺️  http://localhost:${PORT}                                ║`);
+    console.log(`║  GET /api/gis/stats         — Summary counts               ║`);
+    console.log(`║  GET /api/gis/schools        — 39 school locations          ║`);
+    console.log(`║  GET /api/gis/roads          — 205 road segments            ║`);
+    console.log(`║  GET /api/gis/accessibility  — Sector accessibility         ║`);
+    console.log(`║  GET /api/gis/underserved    — Underserved areas            ║`);
+    console.log(`╚════════════════════════════════════════════════════════════╝`);
+  });
+}
+
+start().catch(e => { console.error('❌', e.message); process.exit(1); });

@@ -1,0 +1,190 @@
+<div class="card mt-3">
+    <div class="card-header"><i class="fas fa-map"></i> GIS Data Files from Desktop/DATA</div>
+    <div class="card-body">
+        <div id="gisFileList" class="row">
+            <div class="col-12 text-center text-muted">
+                <i class="fas fa-spinner fa-spin"></i> Loading GIS files...
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-12 text-center">
+                <button class="btn btn-primary" onclick="loadSelectedGISFiles()" id="loadGisBtn">
+                    <i class="fas fa-check-circle"></i> Load Selected GIS Data
+                </button>
+                <button class="btn btn-outline" onclick="refreshGISFiles()" id="refreshGisBtn">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let selectedGISFiles = [];
+    let gisData = null;
+    
+    async function loadGISFiles() {
+        const container = document.getElementById('gisFileList');
+        container.innerHTML = '<div class="col-12 text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading GIS files from Desktop/DATA...</div>';
+        
+        try {
+            const response = await fetch('/api/gis-files');
+            const data = await response.json();
+            gisData = data;
+            
+            container.innerHTML = '';
+            
+            if (data.totalFiles === 0) {
+                container.innerHTML = '<div class="col-12 text-center text-muted">No GIS files found in Desktop/DATA folder</div>';
+                return;
+            }
+            
+            // Display Shapefiles section
+            if (data.shapefiles && data.shapefiles.length > 0) {
+                let shapefileHtml = '<div class="col-md-6"><div class="data-select"><strong><i class="fas fa-draw-polygon"></i> Shapefile Datasets</strong><div class="file-list">';
+                
+                data.shapefiles.forEach(shapefile => {
+                    const componentIcons = [];
+                    if (shapefile.hasShp) componentIcons.push('<span class="badge bg-primary">.shp</span>');
+                    if (shapefile.hasShx) componentIcons.push('<span class="badge bg-primary">.shx</span>');
+                    if (shapefile.hasDbf) componentIcons.push('<span class="badge bg-info">.dbf</span>');
+                    if (shapefile.hasPrj) componentIcons.push('<span class="badge bg-secondary">.prj</span>');
+                    if (shapefile.hasCpg) componentIcons.push('<span class="badge bg-secondary">.cpg</span>');
+                    if (shapefile.hasSbn) componentIcons.push('<span class="badge bg-warning">.sbn</span>');
+                    if (shapefile.hasSbx) componentIcons.push('<span class="badge bg-warning">.sbx</span>');
+                    if (shapefile.hasXml) componentIcons.push('<span class="badge bg-info">.shp.xml</span>');
+                    
+                    const fileSizeMB = (shapefile.size / (1024 * 1024)).toFixed(2);
+                    
+                    shapefileHtml += `
+                        <div class="file-item" onclick="toggleGISFile('${shapefile.name}', 'shapefile')" id="file_${shapefile.name.replace(/[^a-zA-Z0-9]/g, '_')}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <strong><i class="fas fa-draw-polygon"></i> ${shapefile.name}</strong>
+                                <span class="badge bg-success">${shapefile.componentCount} components</span>
+                            </div>
+                            <div class="mt-1">
+                                ${componentIcons.join(' ')}
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                📦 Total size: ${fileSizeMB} MB | 📍 Shapefile dataset
+                            </small>
+                        </div>
+                    `;
+                });
+                
+                shapefileHtml += '</div></div></div>';
+                container.innerHTML += shapefileHtml;
+            }
+            
+            // Display CSV Files section
+            if (data.csvFiles && data.csvFiles.length > 0) {
+                let csvHtml = '<div class="col-md-6"><div class="data-select"><strong><i class="fas fa-file-csv"></i> CSV Data Files</strong><div class="file-list">';
+                
+                data.csvFiles.forEach(csv => {
+                    const fileSizeKB = (csv.size / 1024).toFixed(1);
+                    let fileType = '';
+                    if (csv.name.toLowerCase().includes('school')) fileType = '🏫 Schools';
+                    else if (csv.name.toLowerCase().includes('village')) fileType = '🏘️ Villages';
+                    else if (csv.name.toLowerCase().includes('road')) fileType = '🛣️ Roads';
+                    else fileType = '📄 Data';
+                    
+                    csvHtml += `
+                        <div class="file-item" onclick="toggleGISFile('${csv.name}', 'csv')" id="file_${csv.name.replace(/[^a-zA-Z0-9]/g, '_')}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <strong><i class="fas fa-file-csv"></i> ${csv.name}</strong>
+                            </div>
+                            <div>
+                                <span class="badge bg-info">${fileType}</span>
+                                <span class="badge bg-secondary">${fileSizeKB} KB</span>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                📄 CSV file - can be loaded for analysis
+                            </small>
+                        </div>
+                    `;
+                });
+                
+                csvHtml += '</div></div></div>';
+                container.innerHTML += csvHtml;
+            }
+            
+            // Display summary
+            const summaryHtml = `
+                <div class="col-12 mt-2">
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i> Found ${data.shapefiles.length} shapefile(s) and ${data.csvFiles.length} CSV file(s) in ${data.dataPath}
+                    </div>
+                </div>
+            `;
+            container.innerHTML += summaryHtml;
+            
+        } catch (error) {
+            container.innerHTML = '<div class="col-12 text-center text-danger">Error loading GIS files: ' + error.message + '</div>';
+        }
+    }
+    
+    function toggleGISFile(fileName, type) {
+        const element = document.getElementById(`file_${fileName.replace(/[^a-zA-Z0-9]/g, '_')}`);
+        const index = selectedGISFiles.findIndex(f => f.name === fileName);
+        
+        if (index === -1) {
+            selectedGISFiles.push({ name: fileName, type: type });
+            element.classList.add('selected');
+        } else {
+            selectedGISFiles.splice(index, 1);
+            element.classList.remove('selected');
+        }
+        
+        // Update button text
+        const btn = document.getElementById('loadGisBtn');
+        if (selectedGISFiles.length > 0) {
+            btn.innerHTML = `<i class="fas fa-check-circle"></i> Load ${selectedGISFiles.length} Selected Item(s)`;
+        } else {
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Load Selected GIS Data';
+        }
+    }
+    
+    async function loadSelectedGISFiles() {
+        if (selectedGISFiles.length === 0) {
+            alert('Please select at least one file to load');
+            return;
+        }
+        
+        const btn = document.getElementById('loadGisBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        
+        try {
+            const response = await fetch('/api/load-gis-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ files: selectedGISFiles })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(`✅ ${data.message}\n\nSchools: ${data.counts.schools}\nVillages: ${data.counts.villages}\nRoads: ${data.counts.roads}`);
+                updateDataStatus();
+                loadResults();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error loading files: ' + error.message);
+        }
+        
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+    
+    function refreshGISFiles() {
+        selectedGISFiles = [];
+        loadGISFiles();
+        const btn = document.getElementById('loadGisBtn');
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Load Selected GIS Data';
+    }
+    
+    // Load GIS files when page loads
+    loadGISFiles();
+</script>

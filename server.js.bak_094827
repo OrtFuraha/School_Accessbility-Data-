@@ -1,0 +1,227 @@
+const express = require('express');
+const path = require('path');
+const os = require('os');
+const sqlite3 = require('sqlite3').verbose();
+const NetworkService = require('./services/networkService');
+const networkRoutes = require('./routes/network');
+
+const app = express();
+const PORT = 1111;
+
+const DESKTOP_PATH = path.join(os.homedir(), 'Desktop', 'School_Accessibility_Data');
+const DB_PATH = path.join(DESKTOP_PATH, 'spatial_gis.db');
+
+console.log(`\n╔════════════════════════════════════════════════════════════╗`);
+console.log(`║     Rwanda School Accessibility - Road Network Analysis  ║`);
+console.log(`║     Professional GIS Decision Support System             ║`);
+console.log(`╚════════════════════════════════════════════════════════════╝`);
+
+app.use(express.json());
+app.use(express.static('public'));
+
+// Initialize database
+const db = new sqlite3.Database(DB_PATH);
+
+// Initialize network service
+const networkService = new NetworkService(db);
+app.locals.networkService = networkService;
+
+// Initialize network asynchronously
+networkService.initializeNetwork().then(() => {
+    console.log('✅ Road network analysis ready');
+}).catch(err => {
+    console.error('❌ Network initialization failed:', err.message);
+});
+
+// Create tables if not exists
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS schools (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, school_type TEXT, capacity INTEGER, lon REAL, lat REAL
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS roads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        road_id TEXT, road_type TEXT, road_name TEXT, surface TEXT, 
+        start_lat REAL, start_lon REAL, end_lat REAL, end_lon REAL, length_km REAL
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS sectors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, area_sqkm REAL, lon REAL, lat REAL
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS accessibility_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sector_name TEXT,
+        nearest_school_name TEXT,
+        distance_km REAL,
+        travel_time_minutes REAL,
+        method TEXT,
+        accessibility_class TEXT,
+        accessibility_score REAL,
+        analysis_date TEXT
+    )`);
+});
+
+// API Routes
+app.use('/api/network', networkRoutes);
+
+// Existing GIS endpoints
+app.get('/api/gis/stats', (req, res) => {
+    db.get('SELECT COUNT(*) as cnt FROM schools', (err, schools) => {
+        db.get('SELECT COUNT(*) as cnt FROM roads', (err, roads) => {
+            db.get('SELECT COUNT(*) as cnt FROM sectors', (err, sectors) => {
+                const networkStats = networkService.getNetworkStats();
+                res.json({
+                    schools: schools?.cnt || 0,
+                    roads: roads?.cnt || 0,
+                    sectors: sectors?.cnt || 0,
+                    network: networkStats
+                });
+            });
+        });
+    });
+});
+
+app.get('/api/gis/schools', (req, res) => {
+    db.all('SELECT id, name, school_type, capacity, lon, lat FROM schools', (err, rows) => {
+        const features = (rows || []).map(s => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+            properties: { name: s.name, type: s.school_type, capacity: s.capacity }
+        }));
+        res.json({ type: "FeatureCollection", features: features });
+    });
+});
+
+app.get('/api/gis/roads', (req, res) => {
+    db.all('SELECT id, road_id, road_type, road_name, start_lat, start_lon, end_lat, end_lon, length_km FROM roads', (err, rows) => {
+        const features = (rows || []).map(r => ({
+            type: "Feature",
+            geometry: { 
+                type: "LineString", 
+                coordinates: [[r.start_lon, r.start_lat], [r.end_lon, r.end_lat]] 
+            },
+            properties: { 
+                id: r.road_id, 
+                type: r.road_type, 
+                name: r.road_name, 
+                length: r.length_km 
+            }
+        }));
+        res.json({ type: "FeatureCollection", features: features });
+    });
+});
+
+app.get('/api/gis/sectors', (req, res) => {
+    db.all('SELECT id, name, area_sqkm, lon, lat FROM sectors', (err, rows) => {
+        const features = (rows || []).map(s => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+            properties: { name: s.name, area: s.area_sqkm }
+        }));
+        res.json({ type: "FeatureCollection", features: features });
+    });
+});
+
+app.get('/api/gis/accessibility', (req, res) => {
+    db.all('SELECT * FROM accessibility_results ORDER BY distance_km ASC', (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
+app.post('/api/gis/analyze', async (req, res) => {
+    // Get sectors and schools
+    const sectors = await new Promise(resolve => {
+        db.all('SELECT id, name, lon, lat FROM sectors', (err, rows) => resolve(rows || []));
+    });
+    
+    const schools = await new Promise(resolve => {
+        db.all('SELECT id, name, lon, lat, capacity FROM schools', (err, rows) => resolve(rows || []));
+    });
+    
+    const results = [];
+    
+    for (const sector of sectors) {
+        // Use road network for distance calculation
+        let result;
+        if (networkService.isNetworkReady()) {
+            const networkResult = await networkService.findNearestSchoolViaNetwork(sector.lat, sector.lon, schools);
+            result = networkResult;
+        } else {
+            // Fallback to Euclidean
+            let minDist = Infinity;
+            let nearest = null;
+            schools.forEach(school => {
+                const R = 6371;
+                const dLat = (school.lat - sector.lat) * Math.PI / 180;
+                const dLon = (school.lon - sector.lon) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(sector.lat * Math.PI/180) * Math.cos(school.lat * Math.PI/180) *
+                          Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                const dist = R * c;
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = school;
+                }
+            });
+            result = { school: nearest, distance: minDist, travelTime: minDist / 30 * 60, method: 'euclidean' };
+        }
+        
+        const travelTime = result.travelTime;
+        let accessibilityClass, score;
+        
+        if (result.distance <= 2) {
+            accessibilityClass = "Highly Accessible";
+            score = 100 - (result.distance / 2) * 20;
+        } else if (result.distance <= 5) {
+            accessibilityClass = "Moderately Accessible";
+            score = 80 - ((result.distance - 2) / 3) * 30;
+        } else if (result.distance <= 10) {
+            accessibilityClass = "Poorly Accessible";
+            score = 50 - ((result.distance - 5) / 5) * 30;
+        } else {
+            accessibilityClass = "Underserved";
+            score = Math.max(0, 20 - ((result.distance - 10) / 10) * 20);
+        }
+        
+        results.push({
+            sector_name: sector.name,
+            nearest_school_name: result.school?.name || 'No school nearby',
+            distance_km: result.distance.toFixed(2),
+            travel_time_minutes: travelTime.toFixed(1),
+            method: result.method || 'euclidean',
+            accessibility_class: accessibilityClass,
+            accessibility_score: Math.max(0, Math.min(100, score)).toFixed(1)
+        });
+    }
+    
+    // Save results
+    db.run('DELETE FROM accessibility_results');
+    const stmt = db.prepare(`INSERT INTO accessibility_results 
+        (sector_name, nearest_school_name, distance_km, travel_time_minutes, method, accessibility_class, accessibility_score, analysis_date) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
+    
+    results.forEach(r => stmt.run(r.sector_name, r.nearest_school_name, r.distance_km, r.travel_time_minutes, r.method, r.accessibility_class, r.accessibility_score));
+    
+    console.log(`✅ Analyzed ${results.length} sectors using ${networkService.isNetworkReady() ? 'road network' : 'Euclidean'} method`);
+    res.json({ success: true, count: results.length, method: networkService.isNetworkReady() ? 'road_network' : 'euclidean' });
+});
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`\n╔════════════════════════════════════════════════════════════╗`);
+    console.log(`║  🗺️  Server running at http://localhost:${PORT}              ║`);
+    console.log(`║                                                            ║`);
+    console.log(`║  Network Analysis API:                                     ║`);
+    console.log(`║  POST /api/network/route         - Calculate route         ║`);
+    console.log(`║  POST /api/network/nearest-school - Find nearest school    ║`);
+    console.log(`║  GET  /api/network/stats         - Network statistics      ║`);
+    console.log(`║  GET  /api/network/connectivity  - Connectivity score      ║`);
+    console.log(`╚════════════════════════════════════════════════════════════╝`);
+});

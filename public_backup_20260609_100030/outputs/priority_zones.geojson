@@ -1,0 +1,197 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            37.47471951034056,
+            87.84392202952121
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_1",
+        "from_village": "Village 1",
+        "to_school": "Central School",
+        "length_km": "1505.63",
+        "priority_level": 2,
+        "cost_estimate": 75281500
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            87.48540594933245,
+            84.637423304436
+          ],
+          [
+            70,
+            70
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_2",
+        "from_village": "Village 2",
+        "to_school": "West School",
+        "length_km": "1664.44",
+        "priority_level": 2,
+        "cost_estimate": 83222000
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            69.44294277871177,
+            86.10488030473502
+          ],
+          [
+            70,
+            70
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_3",
+        "from_village": "Village 3",
+        "to_school": "West School",
+        "length_km": "1790.81",
+        "priority_level": 2,
+        "cost_estimate": 89540500
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            53.34871668099879,
+            55.134461538029015
+          ],
+          [
+            50,
+            50
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_4",
+        "from_village": "Village 4",
+        "to_school": "Central High",
+        "length_km": "613.97",
+        "priority_level": 2,
+        "cost_estimate": 30698500
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            75.10130216687412,
+            11.8511780980071
+          ],
+          [
+            70,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_5",
+        "from_village": "Village 5",
+        "to_school": "North School",
+        "length_km": "1769.84",
+        "priority_level": 2,
+        "cost_estimate": 88492000
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            14.27754461854013,
+            17.341163675981726
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_6",
+        "from_village": "Village 6",
+        "to_school": "Central School",
+        "length_km": "1520.50",
+        "priority_level": 2,
+        "cost_estimate": 76025000
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            32.161873956468895,
+            22.29714995177087
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_7",
+        "from_village": "Village 7",
+        "to_school": "Central School",
+        "length_km": "883.21",
+        "priority_level": 2,
+        "cost_estimate": 44160500
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            17.717261392794317,
+            35.962656596706566
+          ],
+          [
+            30,
+            30
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "PROP_8",
+        "from_village": "Village 8",
+        "to_school": "Central School",
+        "length_km": "1322.12",
+        "priority_level": 2,
+        "cost_estimate": 66106000
+      }
+    }
+  ]
+}
