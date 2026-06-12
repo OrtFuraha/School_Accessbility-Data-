@@ -1,11 +1,18 @@
 services:
   - type: web
-    name: school-accessibility-system
-    runtime: node
+    name: rwanda-school-accessibility
+    env: node
+    region: oregon
     plan: free
     buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: PORT
-        value: 1111
+    startCommand: node server.js
     healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATA_DIR
+        value: /opt/render/project/src/DATA
+      - key: SPATIALITE_DB
+        value: /opt/render/project/src/data/gis_database.db
