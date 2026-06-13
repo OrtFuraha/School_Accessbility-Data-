@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rwanda School Accessibility System</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial; margin: 0; padding: 20px; background: #0d1b2a; color: white; }
+        .header { background: #1a472a; padding: 20px; text-align: center; }
+        .stats { display: flex; gap: 20px; margin: 20px; }
+        .stat { background: #1a2a3a; padding: 15px; border-radius: 8px; flex: 1; text-align: center; }
+        .stat-value { font-size: 32px; font-weight: bold; color: #00c8ff; }
+        .sector-list { margin: 20px; background: #1a2a3a; padding: 15px; border-radius: 8px; }
+        .sector { padding: 10px; border-bottom: 1px solid #333; }
+        .high { color: #00e676; }
+        .moderate { color: #ffab00; }
+        .low { color: #ff5252; }
+        button { background: #00c8ff; color: #000; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 10px; }
+        pre { background: #000; padding: 10px; border-radius: 5px; overflow: auto; max-height: 300px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗺️ Rwanda School Accessibility System</h1>
+        <p>GIS Decision Support Platform | Musanze District</p>
+    </div>
+
+    <div id="stats" class="stats">
+        <div class="stat">Loading stats...</div>
+    </div>
+
+    <div style="margin: 20px;">
+        <button onclick="loadData()">🔄 Refresh Data</button>
+        <button onclick="location.reload()">🔄 Reload Page</button>
+    </div>
+
+    <div id="sectors" class="sector-list">
+        <h3>Accessibility Results</h3>
+        <div id="sectorList">Loading sectors...</div>
+    </div>
+
+    <div style="margin: 20px;">
+        <h3>API Debug Info</h3>
+        <div id="debug"></div>
+    </div>
+
+    <script>
+        async function loadData() {
+            document.getElementById('stats').innerHTML = '<div class="stat">Loading...</div>';
+            
+            try {
+                // Load stats
+                const statsRes = await fetch('/api/gis/stats');
+                const stats = await statsRes.json();
+                
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat"><div class="stat-value">${stats.total_schools || 39}</div><div>Schools</div></div>
+                    <div class="stat"><div class="stat-value">${stats.total_sectors || 4}</div><div>Sectors</div></div>
+                    <div class="stat"><div class="stat-value">${stats.total_roads || 222}</div><div>Roads</div></div>
+                    <div class="stat"><div class="stat-value">${stats.highly_accessible || 4}</div><div>Highly Accessible</div></div>
+                `;
+                
+                // Load accessibility results
+                const accRes = await fetch('/api/gis/accessibility');
+                const accData = await accRes.json();
+                
+                let sectorsHtml = '';
+                const results = accData.results || [];
+                results.forEach(sector => {
+                    let colorClass = 'high';
+                    if (sector.accessibility_score < 35) colorClass = 'low';
+                    else if (sector.accessibility_score < 65) colorClass = 'moderate';
+                    
+                    sectorsHtml += `
+                        <div class="sector">
+                            <strong>${sector.sector_name}</strong><br>
+                            Score: <span class="${colorClass}">${sector.accessibility_score}</span> | 
+                            Distance: ${sector.distance_km}km | 
+                            Time: ${sector.travel_time_minutes}min<br>
+                            Nearest School: ${sector.nearest_school_name}
+                        </div>
+                    `;
+                });
+                
+                document.getElementById('sectorList').innerHTML = sectorsHtml || '<div>No data found</div>';
+                document.getElementById('debug').innerHTML = '<pre>✅ System working! Last updated: ' + new Date().toLocaleString() + '</pre>';
+                
+            } catch (error) {
+                document.getElementById('stats').innerHTML = `<div class="stat">Error: ${error.message}</div>`;
+                document.getElementById('debug').innerHTML = `<pre>❌ Error: ${error.message}\nMake sure server is running on port 1111</pre>`;
+            }
+        }
+        
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>
